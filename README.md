@@ -1,4 +1,54 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# BioRest Mobil Uygulaması
+
+BioRest, akıllı saatlerden sağlık verilerini toplayan ve Faunus cihazı ile ortam optimizasyonu sağlayan bir mobil uygulamadır.
+
+## Özellikler
+
+- Akıllı saat entegrasyonu
+- Sağlık verilerinin takibi ve analizi
+- Faunus cihazı ile ortam optimizasyonu
+- Makine öğrenmesi tabanlı öneriler
+- Aromaterapi özellikleri
+
+## Kurulum
+
+1. Gerekli paketleri yükleyin:
+```bash
+npm install
+```
+
+2. iOS için pod'ları yükleyin:
+```bash
+cd ios && pod install && cd ..
+```
+
+3. Uygulamayı başlatın:
+```bash
+# iOS için
+npm run ios
+
+# Android için
+npm run android
+```
+
+## Geliştirme
+
+- `src/screens`: Uygulama ekranları
+- `src/services`: Bluetooth ve makine öğrenmesi servisleri
+- `src/components`: Yeniden kullanılabilir bileşenler
+
+## Teknolojiler
+
+- React Native
+- TypeScript
+- React Navigation
+- React Native BLE PLX
+- TensorFlow.js
+- React Native Chart Kit
+
+## Lisans
+
+MIT
 
 # Getting Started
 
@@ -66,7 +116,7 @@ This is one way to run your app — you can also build it directly from Android 
 
 Now that you have successfully run the app, let's make changes!
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
 
 When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
 
