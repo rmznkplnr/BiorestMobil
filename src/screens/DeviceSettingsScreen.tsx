@@ -1,306 +1,282 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  Switch,
   ScrollView,
-  TouchableOpacity,
   SafeAreaView,
-  TextInput,
+  StatusBar,
+  TouchableOpacity,
+  Switch,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { theme } from '../theme/theme';
+import { Text } from '../components/Text';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+import LinearGradient from 'react-native-linear-gradient';
 
-const DeviceSettingsScreen: React.FC = () => {
-  const [settings, setSettings] = useState({
-    isAutoMode: false,
-    temperature: '22',
-    humidity: '45',
-    lightLevel: '70',
-    soundLevel: '30',
-    aromatherapyLevel: '50',
-    selectedScent: 'lavanta', // Varsayılan koku
+type DeviceSettingsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'DeviceSettings'>;
+
+interface DeviceSettings {
+  name: string;
+  type: 'faunus' | 'other';
+  status: 'connected' | 'disconnected';
+  lastSeen: string;
+  aromas: {
+    id: number;
+    name: string;
+    enabled: boolean;
+  }[];
+  sounds: {
+    id: number;
+    name: string;
+    enabled: boolean;
+  }[];
+  lights: {
+    id: number;
+    name: string;
+    enabled: boolean;
+    color: string;
+    intensity: number;
+  }[];
+}
+
+const DeviceSettingsScreen = () => {
+  const navigation = useNavigation<DeviceSettingsScreenNavigationProp>();
+  const route = useRoute();
+  const deviceId = (route.params as { deviceId: string }).deviceId;
+
+  const [settings, setSettings] = useState<DeviceSettings>({
+    name: 'Faunus Pro',
+    type: 'faunus',
+    status: 'connected',
+    lastSeen: '2 dakika önce',
+    aromas: [
+      { id: 1, name: 'Lavanta', enabled: true },
+      { id: 2, name: 'Papatya', enabled: false },
+      { id: 3, name: 'Vanilya', enabled: false },
+      { id: 4, name: 'Sandal Ağacı', enabled: false },
+      { id: 5, name: 'Bergamot', enabled: false },
+      { id: 6, name: 'Yasemin', enabled: false },
+      { id: 7, name: 'Nane', enabled: false },
+      { id: 8, name: 'Okaliptüs', enabled: false },
+      { id: 9, name: 'Portakal', enabled: false },
+      { id: 10, name: 'Limon', enabled: false },
+    ],
+    sounds: [
+      { id: 1, name: 'Yağmur', enabled: true },
+      { id: 2, name: 'Okyanus', enabled: false },
+      { id: 3, name: 'Orman', enabled: false },
+      { id: 4, name: 'Meditasyon', enabled: false },
+      { id: 5, name: 'Beyaz Gürültü', enabled: false },
+    ],
+    lights: [
+      { id: 1, name: 'Sıcak Beyaz', enabled: true, color: '#FFB74D', intensity: 50 },
+      { id: 2, name: 'Soğuk Beyaz', enabled: false, color: '#81C784', intensity: 50 },
+    ],
   });
 
-  const [isConnected, setIsConnected] = useState(false);
-
-  const scents = [
-    { id: 'lavanta', name: 'Lavanta' },
-    { id: 'vanilya', name: 'Vanilya' },
-    { id: 'okaliptus', name: 'Okaliptus' },
-    { id: 'limon', name: 'Limon' },
-  ];
-
-  const toggleConnection = () => {
-    setIsConnected(!isConnected);
+  const handleAromaToggle = (id: number) => {
+    setSettings(prev => ({
+      ...prev,
+      aromas: prev.aromas.map(aroma =>
+        aroma.id === id ? { ...aroma, enabled: !aroma.enabled } : aroma
+      ),
+    }));
   };
 
-  const SettingItem = ({
-    title,
-    value,
-    onChangeText,
-    unit,
-  }: {
-    title: string;
-    value: string;
-    onChangeText: (text: string) => void;
-    unit: string;
-  }) => (
-    <View style={styles.settingItem}>
-      <Text style={styles.settingTitle}>{title}</Text>
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          value={value}
-          onChangeText={onChangeText}
-          keyboardType="numeric"
-          maxLength={3}
-        />
-        <Text style={styles.unit}>{unit}</Text>
-      </View>
-    </View>
-  );
+  const handleSoundToggle = (id: number) => {
+    setSettings(prev => ({
+      ...prev,
+      sounds: prev.sounds.map(sound =>
+        sound.id === id ? { ...sound, enabled: !sound.enabled } : sound
+      ),
+    }));
+  };
+
+  const handleLightToggle = (id: number) => {
+    setSettings(prev => ({
+      ...prev,
+      lights: prev.lights.map(light =>
+        light.id === id ? { ...light, enabled: !light.enabled } : light
+      ),
+    }));
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView}>
-        <View style={styles.connectionSection}>
-          <Text style={styles.sectionTitle}>Cihaz Bağlantısı</Text>
+    <LinearGradient
+      colors={['#1A1A1A', '#000000']}
+      style={styles.gradient}
+    >
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#000000" />
+        
+        {/* Header */}
+        <View style={styles.header}>
           <TouchableOpacity
-            style={[
-              styles.connectionButton,
-              isConnected ? styles.connectedButton : styles.disconnectedButton,
-            ]}
-            onPress={toggleConnection}>
-            <Text style={styles.connectionButtonText}>
-              {isConnected ? 'Bağlantıyı Kes' : 'Bağlan'}
-            </Text>
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}>
+            <Icon name="arrow-left" size={24} color={theme.colors.primary} />
           </TouchableOpacity>
-          <Text style={styles.connectionStatus}>
-            Durum: {isConnected ? 'Bağlı' : 'Bağlı Değil'}
-          </Text>
+          <View style={styles.headerContent}>
+            <Icon name="spray" size={24} color={theme.colors.primary} />
+            <Text variant="h1" style={styles.headerTitle}>{settings.name}</Text>
+          </View>
         </View>
 
-        <View style={styles.settingsSection}>
-          <Text style={styles.sectionTitle}>Ortam Ayarları</Text>
-          
-          <View style={styles.autoModeContainer}>
-            <Text style={styles.settingTitle}>Otomatik Mod</Text>
-            <Switch
-              value={settings.isAutoMode}
-              onValueChange={(value) =>
-                setSettings({ ...settings, isAutoMode: value })
-              }
-              trackColor={{ false: '#767577', true: '#81b0ff' }}
-              thumbColor={settings.isAutoMode ? '#2196F3' : '#f4f3f4'}
-            />
-          </View>
-
-          <SettingItem
-            title="Sıcaklık"
-            value={settings.temperature}
-            onChangeText={(text) => setSettings({ ...settings, temperature: text })}
-            unit="°C"
-          />
-
-          <SettingItem
-            title="Nem"
-            value={settings.humidity}
-            onChangeText={(text) => setSettings({ ...settings, humidity: text })}
-            unit="%"
-          />
-
-          <SettingItem
-            title="Işık Seviyesi"
-            value={settings.lightLevel}
-            onChangeText={(text) => setSettings({ ...settings, lightLevel: text })}
-            unit="%"
-          />
-
-          <SettingItem
-            title="Ses Seviyesi"
-            value={settings.soundLevel}
-            onChangeText={(text) => setSettings({ ...settings, soundLevel: text })}
-            unit="dB"
-          />
-
-          <View style={styles.aromatherapySection}>
-            <Text style={styles.settingTitle}>Aromaterapi Ayarları</Text>
-            <SettingItem
-              title="Koku Yoğunluğu"
-              value={settings.aromatherapyLevel}
-              onChangeText={(text) => setSettings({ ...settings, aromatherapyLevel: text })}
-              unit="%"
-            />
-            
-            <Text style={styles.settingTitle}>Koku Seçimi</Text>
-            <View style={styles.scentButtonsContainer}>
-              {scents.map((scent) => (
+        <ScrollView style={styles.content}>
+          {/* Aroma Ayarları */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Icon name="spray" size={24} color={theme.colors.primary} />
+              <Text variant="h3" style={styles.sectionTitle}>Aroma Ayarları</Text>
+            </View>
+            <View style={styles.optionsList}>
+              {settings.aromas.map(aroma => (
                 <TouchableOpacity
-                  key={scent.id}
-                  style={[
-                    styles.scentButton,
-                    settings.selectedScent === scent.id && styles.selectedScentButton,
-                  ]}
-                  onPress={() => setSettings({ ...settings, selectedScent: scent.id })}>
-                  <Text
-                    style={[
-                      styles.scentButtonText,
-                      settings.selectedScent === scent.id && styles.selectedScentButtonText,
-                    ]}>
-                    {scent.name}
-                  </Text>
+                  key={aroma.id}
+                  style={styles.optionItem}
+                  onPress={() => handleAromaToggle(aroma.id)}>
+                  <Text variant="body" style={styles.optionText}>{aroma.name}</Text>
+                  <Switch
+                    value={aroma.enabled}
+                    onValueChange={() => handleAromaToggle(aroma.id)}
+                    trackColor={{ false: theme.colors.border, true: theme.colors.accent }}
+                    thumbColor={theme.colors.primary}
+                  />
                 </TouchableOpacity>
               ))}
             </View>
           </View>
-        </View>
 
-        <TouchableOpacity
-          style={[
-            styles.saveButton,
-            !isConnected && styles.saveButtonDisabled,
-          ]}
-          disabled={!isConnected}
-          onPress={() => {/* Ayarları kaydet */}}>
-          <Text style={styles.saveButtonText}>Ayarları Kaydet</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+          {/* Ses Ayarları */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Icon name="volume-high" size={24} color={theme.colors.primary} />
+              <Text variant="h3" style={styles.sectionTitle}>Ses Ayarları</Text>
+            </View>
+            <View style={styles.optionsList}>
+              {settings.sounds.map(sound => (
+                <TouchableOpacity
+                  key={sound.id}
+                  style={styles.optionItem}
+                  onPress={() => handleSoundToggle(sound.id)}>
+                  <Text variant="body" style={styles.optionText}>{sound.name}</Text>
+                  <Switch
+                    value={sound.enabled}
+                    onValueChange={() => handleSoundToggle(sound.id)}
+                    trackColor={{ false: theme.colors.border, true: theme.colors.accent }}
+                    thumbColor={theme.colors.primary}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Işık Ayarları */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Icon name="lightbulb" size={24} color={theme.colors.primary} />
+              <Text variant="h3" style={styles.sectionTitle}>Işık Ayarları</Text>
+            </View>
+            <View style={styles.optionsList}>
+              {settings.lights.map(light => (
+                <TouchableOpacity
+                  key={light.id}
+                  style={styles.optionItem}
+                  onPress={() => handleLightToggle(light.id)}>
+                  <View style={styles.lightOption}>
+                    <View style={[styles.colorIndicator, { backgroundColor: light.color }]} />
+                    <Text variant="body" style={styles.optionText}>{light.name}</Text>
+                  </View>
+                  <Switch
+                    value={light.enabled}
+                    onValueChange={() => handleLightToggle(light.id)}
+                    trackColor={{ false: theme.colors.border, true: theme.colors.accent }}
+                    thumbColor={theme.colors.primary}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
+  gradient: {
+    flex: 1,
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: 'transparent',
   },
-  scrollView: {
-    padding: 15,
+  header: {
+    padding: theme.spacing.lg,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  connectionSection: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 10,
-    marginBottom: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+  backButton: {
+    marginRight: theme.spacing.md,
   },
-  settingsSection: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 10,
-    marginBottom: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+  },
+  headerTitle: {
+    color: theme.colors.primary,
+  },
+  content: {
+    flex: 1,
+  },
+  section: {
+    margin: theme.spacing.lg,
+    padding: theme.spacing.lg,
+    backgroundColor: theme.colors.card.background,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.card.border,
+    ...theme.elevation.medium,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 15,
+    color: theme.colors.primary,
   },
-  connectionButton: {
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginVertical: 10,
+  optionsList: {
+    gap: theme.spacing.md,
   },
-  connectedButton: {
-    backgroundColor: '#e74c3c',
-  },
-  disconnectedButton: {
-    backgroundColor: '#2ecc71',
-  },
-  connectionButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  connectionStatus: {
-    fontSize: 16,
-    color: '#7f8c8d',
-    textAlign: 'center',
-    marginTop: 5,
-  },
-  autoModeContainer: {
+  optionItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingVertical: theme.spacing.sm,
   },
-  settingItem: {
-    marginBottom: 20,
+  optionText: {
+    color: theme.colors.primary,
   },
-  settingTitle: {
-    fontSize: 16,
-    color: '#34495e',
-    marginBottom: 8,
-  },
-  inputContainer: {
+  lightOption: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: theme.spacing.sm,
   },
-  input: {
-    flex: 1,
-    backgroundColor: '#ecf0f1',
-    padding: 10,
-    borderRadius: 8,
-    fontSize: 16,
-  },
-  unit: {
-    marginLeft: 10,
-    fontSize: 16,
-    color: '#7f8c8d',
-    width: 40,
-  },
-  aromatherapySection: {
-    marginTop: 10,
-  },
-  scentButtonsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  scentButton: {
-    backgroundColor: '#ecf0f1',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 10,
-    width: '48%',
-    alignItems: 'center',
-  },
-  selectedScentButton: {
-    backgroundColor: '#3498db',
-  },
-  scentButtonText: {
-    color: '#34495e',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  selectedScentButtonText: {
-    color: 'white',
-  },
-  saveButton: {
-    backgroundColor: '#3498db',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#bdc3c7',
-  },
-  saveButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+  colorIndicator: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
   },
 });
 

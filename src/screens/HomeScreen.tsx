@@ -1,237 +1,177 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
-  Dimensions,
-} from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
+import { LinearGradient } from 'react-native-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { CommonActions } from '@react-navigation/native';
+import { RootStackParamList, TabParamList } from '../navigation/types';
 
-type RootStackParamList = {
-  Home: undefined;
-  HealthData: undefined;
-  DeviceSettings: undefined;
-};
+type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
+type TabNavigationProp = BottomTabNavigationProp<TabParamList>;
 
-interface NavigationCardProps {
-  title: string;
-  icon: string;
-  description: string;
-  onPress: () => void;
-}
+const HomeScreen = () => {
+  const navigation = useNavigation<HomeScreenNavigationProp>();
+  const [isNightMode, setIsNightMode] = useState(false);
 
-const HomeScreen: React.FC = () => {
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const [deviceStatus, setDeviceStatus] = useState({
-    isConnected: false,
-    batteryLevel: 85,
-    lastSync: new Date(),
-  });
+  const toggleNightMode = () => {
+    setIsNightMode(!isNightMode);
+    navigation.navigate('NightMode');
+  };
 
-  const StatusCard = () => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Icon name="bluetooth" size={24} color="#3498db" />
-        <Text style={styles.cardTitle}>Cihaz Durumu</Text>
-      </View>
-      <View style={styles.statusContainer}>
-        <View style={styles.statusItem}>
-          <Icon
-            name={deviceStatus.isConnected ? 'check-circle' : 'close-circle'}
-            size={32}
-            color={deviceStatus.isConnected ? '#2ecc71' : '#e74c3c'}
-          />
-          <Text style={styles.statusLabel}>
-            {deviceStatus.isConnected ? 'Bağlı' : 'Bağlı Değil'}
-          </Text>
-        </View>
-        <View style={styles.statusItem}>
-          <Icon name="battery" size={32} color="#f1c40f" />
-          <Text style={styles.statusLabel}>{deviceStatus.batteryLevel}%</Text>
-        </View>
-        <View style={styles.statusItem}>
-          <Icon name="clock" size={32} color="#9b59b6" />
-          <Text style={styles.statusLabel}>
-            {deviceStatus.lastSync.toLocaleTimeString()}
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
-
-  const NavigationCard: React.FC<NavigationCardProps> = ({ title, icon, description, onPress }) => (
-    <TouchableOpacity style={styles.navCard} onPress={onPress}>
-      <View style={styles.navIconContainer}>
-        <Icon name={icon} size={32} color="#3498db" />
-      </View>
-      <View style={styles.navContent}>
-        <Text style={styles.navTitle}>{title}</Text>
-        <Text style={styles.navDescription}>{description}</Text>
-      </View>
-      <Icon name="chevron-right" size={24} color="#bdc3c7" />
-    </TouchableOpacity>
-  );
-
-  const QuickActions = () => (
-    <View style={styles.quickActionsContainer}>
-      <TouchableOpacity style={styles.quickActionButton}>
-        <Icon name="power" size={24} color="#e74c3c" />
-        <Text style={styles.quickActionText}>Kapat</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.quickActionButton}>
-        <Icon name="refresh" size={24} color="#2ecc71" />
-        <Text style={styles.quickActionText}>Yenile</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.quickActionButton}>
-        <Icon name="cog" size={24} color="#3498db" />
-        <Text style={styles.quickActionText}>Ayarlar</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const navigateToTab = (routeName: keyof TabParamList) => {
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: 'MainTabs',
+        params: {
+          screen: routeName,
+        },
+      })
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <ScrollView style={styles.scrollView}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>BioRest</Text>
-          <Text style={styles.headerSubtitle}>Akıllı Ortam Kontrolü</Text>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>BioRest</Text>
+            <TouchableOpacity 
+              style={styles.settingsButton}
+              onPress={() => navigation.navigate('Settings')}
+            >
+              <Ionicons name="settings-outline" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <StatusCard />
+        <View style={styles.content}>
+          <View style={styles.welcomeSection}>
+            <Text style={styles.welcomeText}>Hoş Geldiniz!</Text>
+            <Text style={styles.subtitleText}>Sağlıklı uyku için BioRest ile tanışın</Text>
+          </View>
 
-        <NavigationCard
-          title="Sağlık Verileri"
-          icon="heart-pulse"
-          description="Uyku ve aktivite verilerinizi görüntüleyin"
-          onPress={() => navigation.navigate('HealthData')}
-        />
+          <View style={styles.cardContainer}>
+            <TouchableOpacity 
+              style={styles.card}
+              onPress={() => navigateToTab('DevicesTab')}
+            >
+              <LinearGradient
+                colors={['#4a90e2', '#357abd']}
+                style={styles.cardGradient}
+              >
+                <Ionicons name="hardware-chip" size={32} color="#fff" />
+                <Text style={styles.cardTitle}>Cihazlarım</Text>
+                <Text style={styles.cardSubtitle}>Cihazlarınızı yönetin</Text>
+              </LinearGradient>
+            </TouchableOpacity>
 
-        <NavigationCard
-          title="Cihaz Ayarları"
-          icon="tune"
-          description="Ortam ayarlarını özelleştirin"
-          onPress={() => navigation.navigate('DeviceSettings')}
-        />
+            <TouchableOpacity 
+              style={styles.card}
+              onPress={() => navigateToTab('StatisticsTab')}
+            >
+              <LinearGradient
+                colors={['#4CAF50', '#388E3C']}
+                style={styles.cardGradient}
+              >
+                <Ionicons name="stats-chart" size={32} color="#fff" />
+                <Text style={styles.cardTitle}>İstatistikler</Text>
+                <Text style={styles.cardSubtitle}>Uyku verilerinizi görüntüleyin</Text>
+              </LinearGradient>
+            </TouchableOpacity>
 
-        <QuickActions />
+            <TouchableOpacity 
+              style={styles.card}
+              onPress={toggleNightMode}
+            >
+              <LinearGradient
+                colors={['#9C27B0', '#7B1FA2']}
+                style={styles.cardGradient}
+              >
+                <Ionicons name={isNightMode ? "moon" : "moon-outline"} size={32} color="#fff" />
+                <Text style={styles.cardTitle}>Gece Modu</Text>
+                <Text style={styles.cardSubtitle}>Gözlerinizi koruyun</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f6fa',
+    backgroundColor: '#000',
   },
   scrollView: {
-    padding: 15,
+    flex: 1,
   },
   header: {
-    marginBottom: 20,
+    padding: 20,
+    paddingTop: 60,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#fff',
   },
-  headerSubtitle: {
+  settingsButton: {
+    padding: 8,
+  },
+  content: {
+    padding: 20,
+  },
+  welcomeSection: {
+    marginBottom: 30,
+  },
+  welcomeText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  subtitleText: {
     fontSize: 16,
-    color: '#7f8c8d',
-    marginTop: 5,
+    color: '#888',
+  },
+  cardContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   card: {
-    backgroundColor: 'white',
+    width: (Dimensions.get('window').width - 60) / 2,
+    height: 160,
+    marginBottom: 20,
     borderRadius: 15,
-    padding: 20,
-    marginBottom: 15,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
+    overflow: 'hidden',
   },
-  cardHeader: {
-    flexDirection: 'row',
+  cardGradient: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15,
   },
   cardTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#2c3e50',
-    marginLeft: 10,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  statusItem: {
-    alignItems: 'center',
-  },
-  statusLabel: {
-    marginTop: 5,
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
-  navCard: {
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 20,
-    marginBottom: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-  },
-  navIconContainer: {
-    width: 50,
-    alignItems: 'center',
-  },
-  navContent: {
-    flex: 1,
-    marginLeft: 15,
-  },
-  navTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-  },
-  navDescription: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginTop: 2,
-  },
-  quickActionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    fontWeight: 'bold',
+    color: '#fff',
     marginTop: 10,
-    marginBottom: 20,
+    textAlign: 'center',
   },
-  quickActionButton: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 15,
-    alignItems: 'center',
-    width: (Dimensions.get('window').width - 60) / 3,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-  },
-  quickActionText: {
+  cardSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 5,
-    fontSize: 12,
-    color: '#7f8c8d',
+    textAlign: 'center',
   },
 });
 
