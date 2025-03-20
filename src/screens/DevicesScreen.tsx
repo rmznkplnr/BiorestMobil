@@ -7,14 +7,14 @@ const DevicesScreen = () => {
   const devices = [
     {
       id: '1',
-      name: 'BioRest Pro',
+      name: 'Akıllı Saat',
       status: 'Aktif',
       lastSync: '2 saat önce',
       battery: 85,
     },
     {
       id: '2',
-      name: 'BioRest Mini',
+      name: 'Faunus',
       status: 'Bağlı Değil',
       lastSync: '1 gün önce',
       battery: 45,
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(80, 200, 120, 0.3)',
   },
   statusInactive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 71, 51,0.5)',
   },
   statusText: {
     color: '#fff',
