@@ -1,21 +1,40 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Image, 
+  ScrollView, 
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
+import { useAuth } from '../context/AuthContext';
 
-type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
+type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const LoginScreen = () => {
   const navigation = useNavigation<LoginScreenNavigationProp>();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = () => {
-    // Giriş kontrolü olmadan direkt ana sayfaya yönlendir
-    navigation.navigate('MainTabs', {
-      screen: 'HomeTab'
-    });
+  const handleLogin = async () => {
+    try {
+      await login(email, password);
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Main' }],
+      });
+    } catch (error) {
+      // Hata işleme
+    }
   };
 
   const handleSocialLogin = (platform: string) => {
@@ -31,106 +50,126 @@ const LoginScreen = () => {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.logoContainer}>
-        <Image 
-          source={require('../assets/logo.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-        <Text style={styles.logoText}>BioRest</Text>
-        <Text style={styles.subtitle}>Sağlıklı Uyku İçin</Text>
-      </View>
-
-      <View style={styles.formContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="E-posta"
-          placeholderTextColor="#666"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-        
-        <TextInput
-          style={styles.input}
-          placeholder="Şifre"
-          placeholderTextColor="#666"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
-
-        <TouchableOpacity 
-          style={styles.forgotPassword}
-          onPress={handleForgotPassword}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.keyboardView}
+      >
+        <ScrollView 
+          style={styles.container}
+          contentContainerStyle={styles.contentContainer}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>Giriş Yap</Text>
-        </TouchableOpacity>
+          <View style={styles.logoContainer}>
+            <Image 
+              source={require('../assets/logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <Text style={styles.logoText}>BioRest</Text>
+            <Text style={styles.subtitle}>Sağlıklı Uyku İçin</Text>
+          </View>
 
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>veya</Text>
-          <View style={styles.dividerLine} />
-        </View>
+          <View style={styles.formContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="E-posta"
+              placeholderTextColor="#666"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            
+            <TextInput
+              style={styles.input}
+              placeholder="Şifre"
+              placeholderTextColor="#666"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
 
-        <View style={styles.socialButtons}>
-          <TouchableOpacity 
-            style={[styles.socialButton, styles.googleButton]} 
-            onPress={() => handleSocialLogin('Google')}
-          >
-            <Text style={styles.socialButtonText}>Google ile Giriş Yap</Text>
-          </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.forgotPassword}
+              onPress={handleForgotPassword}
+            >
+              <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.button} onPress={handleLogin}>
+              <Text style={styles.buttonText}>Giriş Yap</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={[styles.socialButton, styles.facebookButton]} 
-            onPress={() => handleSocialLogin('Facebook')}
-          >
-            <Text style={styles.socialButtonText}>Facebook ile Giriş Yap</Text>
-          </TouchableOpacity>
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>veya</Text>
+              <View style={styles.dividerLine} />
+            </View>
 
-          <TouchableOpacity 
-            style={[styles.socialButton, styles.appleButton]} 
-            onPress={() => handleSocialLogin('Apple')}
-          >
-            <Text style={styles.socialButtonText}>Apple ile Giriş Yap</Text>
-          </TouchableOpacity>
-        </View>
+            <View style={styles.socialButtons}>
+              <TouchableOpacity 
+                style={[styles.socialButton, styles.googleButton]} 
+                onPress={() => handleSocialLogin('Google')}
+              >
+                <Text style={styles.socialButtonText}>Google ile Giriş Yap</Text>
+              </TouchableOpacity>
 
-        <View style={styles.registerContainer}>
-          <Text style={styles.registerText}>Hesabın yok mu? </Text>
-          <TouchableOpacity onPress={handleRegister}>
-            <Text style={styles.registerButton}>Kayıt Ol</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </ScrollView>
+              <TouchableOpacity 
+                style={[styles.socialButton, styles.facebookButton]} 
+                onPress={() => handleSocialLogin('Facebook')}
+              >
+                <Text style={styles.socialButtonText}>Facebook ile Giriş Yap</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.socialButton, styles.appleButton]} 
+                onPress={() => handleSocialLogin('Apple')}
+              >
+                <Text style={styles.socialButtonText}>Apple ile Giriş Yap</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.registerContainer}>
+              <Text style={styles.registerText}>Hesabın yok mu? </Text>
+              <TouchableOpacity onPress={handleRegister}>
+                <Text style={styles.registerButton}>Kayıt Ol</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  keyboardView: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: '#000',
   },
   contentContainer: {
     flexGrow: 1,
+    paddingBottom: Platform.OS === 'android' ? 20 : 0,
   },
   logoContainer: {
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 100,
-    paddingBottom: 50,
+    paddingTop: 60,
+    paddingBottom: 30,
   },
   logo: {
-    width: 200,
-    height: 200,
-    marginTop: -40,
+    width: 150,
+    height: 150,
   },
   logoText: {
     fontSize: 38,
@@ -144,8 +183,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   formContainer: {
-    flex: 2,
+    flex: 1,
     padding: 20,
+    paddingBottom: Platform.OS === 'android' ? 40 : 20,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
@@ -221,6 +261,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 20,
+    paddingBottom: Platform.OS === 'android' ? 20 : 0,
   },
   registerText: {
     color: '#888',

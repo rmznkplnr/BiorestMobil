@@ -3,111 +3,119 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
-  Dimensions,
+  ScrollView,
+  SafeAreaView,
+  StatusBar,
+  Platform
 } from 'react-native';
-import { LinearGradient } from 'react-native-linear-gradient';
-import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { LinearGradient } from 'react-native-linear-gradient';
 
-type DevicesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
-
-// Renk kombinasyonları
-const gradientColors = [
-  ['#1e3c72', '#2a5298'], // Koyu lacivert
-  ['#2C3E50', '#3498db'], // Gece mavisi
-  ['#373B44', '#4286f4'], // Çelik mavisi
-  ['#0F2027', '#203A43'], // Okyanus mavisi
-  ['#000046', '#1CB5E0'], // Gece yarısı
-  ['#243B55', '#141E30'], // Derin deniz
-];
-
-interface Device {
-  id: string;
-  name: string;
-  type: string;
-  status: 'connected' | 'disconnected';
-  icon: string;
-}
+type DevicesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
 
 const DevicesScreen = () => {
   const navigation = useNavigation<DevicesScreenNavigationProp>();
 
-  // Örnek cihaz verileri
-  const devices: Device[] = [
-    {
-      id: '1',
-      name: 'Faunus Yatak Odası',
-      type: 'Faunus Cihazı',
-      status: 'connected',
-      icon: 'bed-outline',
-    },
-    {
-      id: '2',
-      name: 'Faunus Salon',
-      type: 'Faunus Cihazı',
-      status: 'disconnected',
-      icon: 'home-outline',
-    },
-    {
-      id: '3',
-      name: 'Akıllı Saat',
-      type: 'Sağlık Cihazı',
-      status: 'connected',
-      icon: 'watch-outline',
-    },
+  const gradientColors = [
+    ['#1e3c72', '#2a5298'], // dark blue
+    ['#2C3E50', '#3498db'], // night blue
+    ['#373B44', '#4286f4'], // steel blue
+    ['#0F2027', '#203A43'], // ocean blue
+    ['#000046', '#1CB5E0'], // midnight
+    ['#243B55', '#141E30'], // deep sea
   ];
 
   const getGradientColors = (index: number) => {
     return gradientColors[index % gradientColors.length];
   };
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Cihazlarım</Text>
-        <TouchableOpacity onPress={() => {}} style={styles.addButton}>
-          <Ionicons name="add-circle-outline" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
+  const devices = [
+    {
+      id: '1',
+      name: 'Faunus Yatak Odası',
+      type: 'faunus',
+      connected: true,
+    },
+    {
+      id: '2',
+      name: 'Faunus Salon',
+      type: 'faunus',
+      connected: false,
+    },
+    {
+      id: '3',
+      name: 'Akıllı Saat',
+      type: 'watch',
+      connected: true,
+    },
+  ];
 
-      <ScrollView style={styles.content}>
-        <View style={styles.devicesGrid}>
-          {devices.map((device, index) => (
-            <TouchableOpacity
-              key={device.id}
-              style={styles.deviceCard}
-              onPress={() => {}}
-            >
-              <LinearGradient
-                colors={getGradientColors(index)}
-                style={styles.cardGradient}
-              >
-                <View style={styles.deviceIcon}>
-                  <Ionicons name={device.icon} size={32} color="#fff" />
-                  <View style={[
-                    styles.statusDot,
-                    device.status === 'connected' ? styles.statusConnected : styles.statusDisconnected
-                  ]} />
-                </View>
-                <Text style={styles.deviceName}>{device.name}</Text>
-                <Text style={styles.deviceType}>{device.type}</Text>
-                <Text style={styles.deviceStatus}>
-                  {device.status === 'connected' ? 'Bağlı' : 'Bağlı Değil'}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          ))}
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Cihazlarım</Text>
+          <TouchableOpacity 
+            style={styles.addButton}
+            onPress={() => navigation.navigate('DeviceManagement')}
+          >
+            <Ionicons name="add-circle-outline" size={24} color="#fff" />
+          </TouchableOpacity>
         </View>
-      </ScrollView>
-    </View>
+
+        <ScrollView 
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.devicesGrid}>
+            {devices.map((device, index) => (
+              <TouchableOpacity
+                key={device.id}
+                style={styles.deviceCard}
+                onPress={() => navigation.navigate('DeviceDetail', { deviceId: device.id })}
+              >
+                <LinearGradient
+                  colors={getGradientColors(index)}
+                  style={styles.deviceGradient}
+                >
+                  <View style={styles.deviceHeader}>
+                    <Ionicons 
+                      name={device.type === 'faunus' ? 'bed-outline' : 'watch-outline'} 
+                      size={24} 
+                      color="#fff" 
+                    />
+                    <View style={[
+                      styles.connectionStatus,
+                      device.connected ? styles.connected : styles.disconnected
+                    ]} />
+                  </View>
+                  <View style={styles.deviceInfo}>
+                    <Text style={styles.deviceName}>{device.name}</Text>
+                    <Text style={styles.deviceType}>
+                      {device.type === 'faunus' ? 'Faunus Cihazı' : 'Akıllı Saat'}
+                    </Text>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
   container: {
     flex: 1,
     backgroundColor: '#000',
@@ -116,8 +124,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+    paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 28,
@@ -129,64 +138,61 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
     padding: 10,
+    paddingBottom: Platform.OS === 'android' ? 20 : 0,
   },
   devicesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    padding: 10,
   },
   deviceCard: {
-    width: (Dimensions.get('window').width - 60) / 2,
-    height: 160,
-    marginBottom: 20,
+    width: '48%',
+    marginBottom: 15,
     borderRadius: 15,
     overflow: 'hidden',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
-  cardGradient: {
-    flex: 1,
-    padding: 20,
-    justifyContent: 'center',
+  deviceGradient: {
+    padding: 15,
+    height: 160,
+  },
+  deviceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 15,
   },
-  deviceIcon: {
-    position: 'relative',
-    marginBottom: 10,
-  },
-  statusDot: {
-    position: 'absolute',
-    right: -5,
-    top: -5,
+  connectionStatus: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#000',
   },
-  statusConnected: {
+  connected: {
     backgroundColor: '#4CAF50',
   },
-  statusDisconnected: {
+  disconnected: {
     backgroundColor: '#f44336',
+  },
+  deviceInfo: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
   deviceName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#fff',
-    textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: 5,
   },
   deviceType: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.7)',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  deviceStatus: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.9)',
-    textAlign: 'center',
+    color: 'rgba(255, 255, 255, 0.7)',
   },
 });
 

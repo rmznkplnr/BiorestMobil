@@ -1,13 +1,52 @@
-import { SleepNotification } from '../types/sleep';
+// Z-score hesaplama için tip tanımları
+export interface SleepMetrics {
+  date: string;
+  remSleep: number; // dakika
+  deepSleep: number; // dakika
+  heartRate: number; // BPM
+  sleepDuration: number; // dakika
+  sleepEfficiency: number; // yüzde
+}
+
+// Uyku bildirimi için tip tanımı
+export interface SleepNotification {
+  date: string;
+  lightLevel: string;
+  fragrance: string;
+  sound: string;
+  duration: string;
+  heartRateData: {
+    time: string[];
+    rates: number[];
+    events: {
+      time: string;
+      action: string;
+      effect: string;
+    }[];
+  };
+}
 
 export type RootStackParamList = {
-  Login: undefined;
-  MainTabs: { screen: keyof TabParamList };
-  NightMode: undefined;
-  Settings: undefined;
+  Auth: undefined;
+  Main: undefined;
+  DeviceDetail: {
+    deviceId: string;
+  };
   SleepDetails: {
     sleepData: SleepNotification;
   };
+};
+
+export type AuthStackParamList = {
+  Login: undefined;
+};
+
+export type MainTabParamList = {
+  HomeTab: undefined;
+  StatisticsTab: undefined;
+  DevicesTab: undefined;
+  ProfileTab: undefined;
+  SettingsTab: undefined;
 };
 
 export type TabParamList = {

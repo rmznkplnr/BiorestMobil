@@ -4,29 +4,58 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Dimensions,
-  TextInput,
   TouchableOpacity,
+  TextInput,
   Alert,
+  SafeAreaView,
+  StatusBar,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import type { RouteProp } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList, SleepNotification } from '../navigation/types';
 
-type SleepDetailsScreenRouteProp = RouteProp<RootStackParamList, 'SleepDetails'>;
-type SleepDetailsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'SleepDetails'>;
+type SleepDetailsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const SleepDetailsScreen = () => {
-  const route = useRoute<SleepDetailsScreenRouteProp>();
   const navigation = useNavigation<SleepDetailsScreenNavigationProp>();
   const [selectedTab, setSelectedTab] = useState<'details' | 'rating'>('details');
   const [sleepRating, setSleepRating] = useState(0);
   const [comment, setComment] = useState('');
 
-  const { sleepData } = route.params;
+  // Örnek veri
+  const sleepData: SleepNotification = {
+    date: '21.03.2024',
+    lightLevel: 'Düşük',
+    fragrance: 'Lavanta',
+    sound: 'Yağmur Sesi',
+    duration: '7.5 saat',
+    heartRateData: {
+      time: ['23:00', '23:30', '00:00', '00:30', '01:00', '01:30', '02:00'],
+      rates: [75, 85, 95, 88, 78, 72, 68],
+      events: [
+        {
+          time: '00:00',
+          action: 'Yüksek nabız tespit edildi',
+          effect: 'Ortama ferahlatıcı lavanta kokusu verildi, ışık seviyesi düşürüldü'
+        },
+        {
+          time: '00:30',
+          action: 'Nabız düşmeye başladı',
+          effect: 'Mevcut ayarlar korundu'
+        },
+        {
+          time: '01:30',
+          action: 'Derin uyku fazına geçiş',
+          effect: 'Ses seviyesi kademeli olarak azaltıldı'
+        }
+      ]
+    }
+  };
+
   const screenWidth = Dimensions.get('window').width;
 
   const chartConfig = {
@@ -62,141 +91,142 @@ const SleepDetailsScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Uyku Analizi</Text>
-        <View style={styles.headerRight} />
-      </View>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Uyku Analizi</Text>
+          <View style={{ width: 24 }} />
+        </View>
 
-      <View style={styles.tabContainer}>
-        <TouchableOpacity 
-          style={[styles.tab, selectedTab === 'details' && styles.activeTab]}
-          onPress={() => setSelectedTab('details')}
-        >
-          <Text style={[styles.tabText, selectedTab === 'details' && styles.activeTabText]}>
-            Detaylar
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tab, selectedTab === 'rating' && styles.activeTab]}
-          onPress={() => setSelectedTab('rating')}
-        >
-          <Text style={[styles.tabText, selectedTab === 'rating' && styles.activeTabText]}>
-            Değerlendirme
-          </Text>
-        </TouchableOpacity>
-      </View>
+        <View style={styles.tabContainer}>
+          <TouchableOpacity 
+            style={[styles.tab, selectedTab === 'details' && styles.activeTab]}
+            onPress={() => setSelectedTab('details')}
+          >
+            <Text style={[styles.tabText, selectedTab === 'details' && styles.activeTabText]}>
+              Detaylar
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tab, selectedTab === 'rating' && styles.activeTab]}
+            onPress={() => setSelectedTab('rating')}
+          >
+            <Text style={[styles.tabText, selectedTab === 'rating' && styles.activeTabText]}>
+              Değerlendirme
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      <ScrollView style={styles.content}>
-        {selectedTab === 'details' ? (
-          <View style={styles.detailsContainer}>
-            <Text style={styles.chartTitle}>Gece Boyunca Nabız Değişimi</Text>
-            <LineChart
-              data={{
-                labels: sleepData.heartRateData.time,
-                datasets: [{
-                  data: sleepData.heartRateData.rates
-                }]
-              }}
-              width={screenWidth - 40}
-              height={220}
-              chartConfig={chartConfig}
-              bezier
-              style={styles.chart}
-            />
-
-            <View style={styles.eventsContainer}>
-              <Text style={styles.eventsTitle}>Önemli Olaylar</Text>
-              {sleepData.heartRateData.events.map((event, index) => (
-                <View key={index} style={styles.eventItem}>
-                  <View style={styles.eventHeader}>
-                    <Ionicons name="time-outline" size={20} color="#4a90e2" />
-                    <Text style={styles.eventTime}>{event.time}</Text>
-                  </View>
-                  <Text style={styles.eventAction}>{event.action}</Text>
-                  <Text style={styles.eventEffect}>{event.effect}</Text>
+        <ScrollView style={styles.content}>
+          {selectedTab === 'details' ? (
+            <View style={styles.detailsContainer}>
+              <View style={styles.infoCard}>
+                <Text style={styles.infoTitle}>Uyku Özeti</Text>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Tarih:</Text>
+                  <Text style={styles.infoValue}>{sleepData.date}</Text>
                 </View>
-              ))}
-            </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Süre:</Text>
+                  <Text style={styles.infoValue}>{sleepData.duration}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Ortam Işığı:</Text>
+                  <Text style={styles.infoValue}>{sleepData.lightLevel}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Ortam Sesi:</Text>
+                  <Text style={styles.infoValue}>{sleepData.sound}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Aroma:</Text>
+                  <Text style={styles.infoValue}>{sleepData.fragrance}</Text>
+                </View>
+              </View>
 
-            <View style={styles.summaryContainer}>
-              <Text style={styles.summaryTitle}>Özet Bilgiler</Text>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Ortalama Nabız:</Text>
-                <Text style={styles.summaryValue}>
-                  {Math.round(
-                    sleepData.heartRateData.rates.reduce((a, b) => a + b) / 
-                    sleepData.heartRateData.rates.length
-                  )} BPM
-                </Text>
+              <View style={styles.chartSection}>
+                <Text style={styles.chartTitle}>Gece Boyunca Nabız Değişimi</Text>
+                <LineChart
+                  data={{
+                    labels: sleepData.heartRateData.time,
+                    datasets: [{
+                      data: sleepData.heartRateData.rates
+                    }]
+                  }}
+                  width={screenWidth - 40}
+                  height={220}
+                  chartConfig={chartConfig}
+                  bezier
+                  style={styles.chart}
+                />
               </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>En Yüksek Nabız:</Text>
-                <Text style={styles.summaryValue}>
-                  {Math.max(...sleepData.heartRateData.rates)} BPM
-                </Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>En Düşük Nabız:</Text>
-                <Text style={styles.summaryValue}>
-                  {Math.min(...sleepData.heartRateData.rates)} BPM
-                </Text>
+
+              <View style={styles.eventsContainer}>
+                <Text style={styles.eventsTitle}>Faunus Müdahaleleri</Text>
+                {sleepData.heartRateData.events.map((event, index) => (
+                  <View key={index} style={styles.eventCard}>
+                    <View style={styles.eventHeader}>
+                      <Ionicons name="time-outline" size={20} color="#4a90e2" />
+                      <Text style={styles.eventTime}>{event.time}</Text>
+                    </View>
+                    <Text style={styles.eventAction}>{event.action}</Text>
+                    <Text style={styles.eventEffect}>{event.effect}</Text>
+                  </View>
+                ))}
               </View>
             </View>
-          </View>
-        ) : (
-          <View style={styles.ratingContainer}>
-            <Text style={styles.ratingTitle}>Uykunuzu Değerlendirin</Text>
-            <View style={styles.starsContainer}>
-              {renderStars()}
+          ) : (
+            <View style={styles.ratingContainer}>
+              <Text style={styles.ratingTitle}>Uykunuzu Değerlendirin</Text>
+              <View style={styles.starsContainer}>
+                {renderStars()}
+              </View>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Yorumunuzu yazın (isteğe bağlı)"
+                placeholderTextColor="#666"
+                multiline
+                value={comment}
+                onChangeText={setComment}
+              />
+              <TouchableOpacity
+                style={[styles.submitButton, !sleepRating && styles.disabledButton]}
+                onPress={handleSleepRating}
+                disabled={!sleepRating}
+              >
+                <Text style={styles.submitButtonText}>Değerlendirmeyi Gönder</Text>
+              </TouchableOpacity>
             </View>
-            <TextInput
-              style={styles.commentInput}
-              placeholder="Yorumunuzu yazın (isteğe bağlı)"
-              placeholderTextColor="#666"
-              multiline
-              value={comment}
-              onChangeText={setComment}
-            />
-            <TouchableOpacity
-              style={[styles.submitButton, !sleepRating && styles.disabledButton]}
-              onPress={handleSleepRating}
-              disabled={!sleepRating}
-            >
-              <Text style={styles.buttonText}>Değerlendirmeyi Gönder</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </ScrollView>
-    </View>
+          )}
+        </ScrollView>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
     backgroundColor: '#000',
   },
+  container: {
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 20,
-    paddingTop: 60,
-  },
-  backButton: {
-    padding: 8,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
-  },
-  headerRight: {
-    width: 40,
   },
   tabContainer: {
     flexDirection: 'row',
@@ -208,7 +238,7 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: 'center',
     borderRadius: 8,
   },
@@ -225,39 +255,68 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
   },
   detailsContainer: {
-    flex: 1,
+    padding: 20,
   },
-  chartTitle: {
-    color: '#fff',
+  infoCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 20,
+  },
+  infoTitle: {
     fontSize: 18,
     fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 15,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  infoLabel: {
+    color: '#888',
+    fontSize: 14,
+  },
+  infoValue: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  chartSection: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 20,
+  },
+  chartTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
     marginBottom: 15,
     textAlign: 'center',
   },
   chart: {
-    marginVertical: 8,
-    borderRadius: 16,
+    borderRadius: 15,
   },
   eventsContainer: {
-    marginTop: 20,
-    padding: 15,
-    backgroundColor: '#222',
-    borderRadius: 12,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 15,
+    padding: 20,
   },
   eventsTitle: {
-    color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+    color: '#fff',
     marginBottom: 15,
   },
-  eventItem: {
-    marginBottom: 15,
-    padding: 12,
-    backgroundColor: '#333',
-    borderRadius: 8,
+  eventCard: {
+    backgroundColor: '#222',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 10,
   },
   eventHeader: {
     flexDirection: 'row',
@@ -280,74 +339,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontStyle: 'italic',
   },
-  summaryContainer: {
-    marginTop: 20,
-    padding: 15,
-    backgroundColor: '#222',
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  summaryTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-  },
-  summaryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  summaryLabel: {
-    color: '#888',
-    fontSize: 16,
-  },
-  summaryValue: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
   ratingContainer: {
     padding: 20,
+    alignItems: 'center',
   },
   ratingTitle: {
-    color: '#fff',
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 20,
+    color: '#fff',
+    marginBottom: 30,
     textAlign: 'center',
   },
   starsContainer: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: 30,
   },
   star: {
     marginHorizontal: 5,
   },
   commentInput: {
     width: '100%',
-    height: 100,
-    backgroundColor: '#333',
-    borderRadius: 10,
+    height: 120,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 15,
     padding: 15,
     color: '#fff',
     textAlignVertical: 'top',
     marginBottom: 20,
   },
   submitButton: {
-    backgroundColor: '#4CAF50',
-    padding: 15,
+    backgroundColor: '#4a90e2',
+    paddingVertical: 15,
+    paddingHorizontal: 30,
     borderRadius: 10,
+    width: '100%',
   },
   disabledButton: {
     opacity: 0.5,
   },
-  buttonText: {
+  submitButtonText: {
     color: '#fff',
-    textAlign: 'center',
     fontSize: 16,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
 
