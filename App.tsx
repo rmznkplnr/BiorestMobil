@@ -10,6 +10,7 @@ import StatisticsScreen from './src/screens/StatisticsScreen';
 import NightModeScreen from './src/screens/NightModeScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import SleepDetailsScreen from './src/screens/SleepDetailsScreen';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -59,6 +60,7 @@ export default function App() {
         <Stack.Screen name="MainTabs" component={TabNavigator} />
         <Stack.Screen name="NightMode" component={NightModeScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
+        <Stack.Screen name="SleepDetails" component={SleepDetailsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

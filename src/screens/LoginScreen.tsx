@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
@@ -13,7 +13,9 @@ const LoginScreen = () => {
 
   const handleLogin = () => {
     // Giriş kontrolü olmadan direkt ana sayfaya yönlendir
-    navigation.navigate('MainTabs');
+    navigation.navigate('MainTabs', {
+      screen: 'HomeTab'
+    });
   };
 
   const handleSocialLogin = (platform: string) => {
@@ -29,7 +31,7 @@ const LoginScreen = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <View style={styles.logoContainer}>
         <Image 
           source={require('../assets/logo.png')}
@@ -107,7 +109,7 @@ const LoginScreen = () => {
           </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
@@ -116,11 +118,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
+  contentContainer: {
+    flexGrow: 1,
+  },
   logoContainer: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingTop: 100,
+    paddingBottom: 50,
   },
   logo: {
     width: 200,

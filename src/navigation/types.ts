@@ -1,8 +1,13 @@
+import { SleepNotification } from '../types/sleep';
+
 export type RootStackParamList = {
   Login: undefined;
-  MainTabs: undefined;
+  MainTabs: { screen: keyof TabParamList };
   NightMode: undefined;
   Settings: undefined;
+  SleepDetails: {
+    sleepData: SleepNotification;
+  };
 };
 
 export type TabParamList = {
