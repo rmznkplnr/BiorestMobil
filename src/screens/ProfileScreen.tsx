@@ -52,8 +52,8 @@ const ProfileScreen = () => {
                 <Ionicons name="camera" size={20} color="#fff" />
               </TouchableOpacity>
             </View>
-            <Text style={styles.userName}>Ahmet Yılmaz</Text>
-            <Text style={styles.userEmail}>ahmet.yilmaz@example.com</Text>
+            <Text style={styles.userName}>Ramazan Kaplaner</Text>
+            <Text style={styles.userEmail}>biorest@gmail.com</Text>
           </View>
 
           {/* Ayarlar Menüsü */}
