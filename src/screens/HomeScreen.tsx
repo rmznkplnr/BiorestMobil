@@ -8,6 +8,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { RootStackParamList, MainTabParamList, SleepNotification } from '../navigation/types';
 import { AnimatedCircularProgress } from 'react-native-circular-progress';
+import { SafeAreaView as SafeAreaViewContext } from 'react-native-safe-area-context';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 type TabNavigationProp = BottomTabNavigationProp<MainTabParamList>;
@@ -100,9 +101,9 @@ const HomeScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaViewContext style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Hoş Geldiniz</Text>
         </View>
@@ -338,17 +339,20 @@ const HomeScreen = () => {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </SafeAreaViewContext>
   );
 };
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#121212',
   },
   container: {
     flex: 1,
+  },
+  contentContainer: {
+    paddingBottom: Platform.select({ ios: 90, android: 70 }),
   },
   header: {
     padding: 20,

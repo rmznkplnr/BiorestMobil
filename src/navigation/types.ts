@@ -45,8 +45,8 @@ export type MainTabParamList = {
   HomeTab: undefined;
   StatisticsTab: undefined;
   DevicesTab: undefined;
+  StoreTab: undefined;
   ProfileTab: undefined;
-  SettingsTab: undefined;
 };
 
 export type TabParamList = {

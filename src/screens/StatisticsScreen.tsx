@@ -15,6 +15,7 @@ import { LineChart } from 'react-native-chart-kit';
 import { LinearGradient } from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { Calendar } from 'react-native-calendars';
+import { SafeAreaView as SafeAreaViewContext } from 'react-native-safe-area-context';
 
 interface SleepMetrics {
   date: string;
@@ -71,9 +72,9 @@ const StatisticsScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaViewContext style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <View style={styles.container}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>İstatistikler</Text>
           <TouchableOpacity 
@@ -84,86 +85,80 @@ const StatisticsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <ScrollView 
-          style={styles.content}
-          contentContainerStyle={styles.contentContainer}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Z-Score Grafiği */}
-          <View style={styles.chartSection}>
-            <Text style={styles.sectionTitle}>Uyku Kalite Skoru (Z-Score)</Text>
-            <View style={styles.chartContainer}>
-              <LineChart
-                data={zScoreData}
-                width={screenWidth - 40}
-                height={220}
-                chartConfig={chartConfig}
-                bezier
-                style={styles.chart}
-              />
+        {/* Z-Score Grafiği */}
+        <View style={styles.chartSection}>
+          <Text style={styles.sectionTitle}>Uyku Kalite Skoru (Z-Score)</Text>
+          <View style={styles.chartContainer}>
+            <LineChart
+              data={zScoreData}
+              width={screenWidth - 40}
+              height={220}
+              chartConfig={chartConfig}
+              bezier
+              style={styles.chart}
+            />
+          </View>
+          <View style={styles.statsContainer}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>En Yüksek</Text>
+              <Text style={styles.statValue}>8.2</Text>
             </View>
-            <View style={styles.statsContainer}>
-              <View style={styles.statItem}>
-                <Text style={styles.statLabel}>En Yüksek</Text>
-                <Text style={styles.statValue}>8.2</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statLabel}>Ortalama</Text>
-                <Text style={styles.statValue}>7.3</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statLabel}>En Düşük</Text>
-                <Text style={styles.statValue}>6.5</Text>
-              </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Ortalama</Text>
+              <Text style={styles.statValue}>7.3</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>En Düşük</Text>
+              <Text style={styles.statValue}>6.5</Text>
             </View>
           </View>
+        </View>
 
-          {/* Metrikler */}
-          <View style={styles.metricsSection}>
-            <Text style={styles.sectionTitle}>Uyku Metrikleri</Text>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              style={styles.metricsScroll}
-            >
-              <View style={styles.metricCard}>
-                <Ionicons name="moon" size={24} color="#4a90e2" />
-                <Text style={styles.metricValue}>7.5</Text>
-                <Text style={styles.metricLabel}>Ortalama Süre (saat)</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Ionicons name="heart" size={24} color="#e74c3c" />
-                <Text style={styles.metricValue}>68</Text>
-                <Text style={styles.metricLabel}>Ort. Nabız (bpm)</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Ionicons name="bed" size={24} color="#2ecc71" />
-                <Text style={styles.metricValue}>92%</Text>
-                <Text style={styles.metricLabel}>Uyku Kalitesi</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Ionicons name="time" size={24} color="#f1c40f" />
-                <Text style={styles.metricValue}>23:30</Text>
-                <Text style={styles.metricLabel}>Ort. Yatış Saati</Text>
-              </View>
-            </ScrollView>
-          </View>
-
-          {/* Haftalık Uyku Süresi Grafiği */}
-          <View style={styles.chartSection}>
-            <Text style={styles.sectionTitle}>Haftalık Uyku Süresi</Text>
-            <View style={styles.chartContainer}>
-              <LineChart
-                data={sleepDurationData}
-                width={screenWidth - 40}
-                height={220}
-                chartConfig={chartConfig}
-                bezier
-                style={styles.chart}
-              />
+        {/* Metrikler */}
+        <View style={styles.metricsSection}>
+          <Text style={styles.sectionTitle}>Uyku Metrikleri</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.metricsScroll}
+          >
+            <View style={styles.metricCard}>
+              <Ionicons name="moon" size={24} color="#4a90e2" />
+              <Text style={styles.metricValue}>7.5</Text>
+              <Text style={styles.metricLabel}>Ortalama Süre (saat)</Text>
             </View>
+            <View style={styles.metricCard}>
+              <Ionicons name="heart" size={24} color="#e74c3c" />
+              <Text style={styles.metricValue}>68</Text>
+              <Text style={styles.metricLabel}>Ort. Nabız (bpm)</Text>
+            </View>
+            <View style={styles.metricCard}>
+              <Ionicons name="bed" size={24} color="#2ecc71" />
+              <Text style={styles.metricValue}>92%</Text>
+              <Text style={styles.metricLabel}>Uyku Kalitesi</Text>
+            </View>
+            <View style={styles.metricCard}>
+              <Ionicons name="time" size={24} color="#f1c40f" />
+              <Text style={styles.metricValue}>23:30</Text>
+              <Text style={styles.metricLabel}>Ort. Yatış Saati</Text>
+            </View>
+          </ScrollView>
+        </View>
+
+        {/* Haftalık Uyku Süresi Grafiği */}
+        <View style={styles.chartSection}>
+          <Text style={styles.sectionTitle}>Haftalık Uyku Süresi</Text>
+          <View style={styles.chartContainer}>
+            <LineChart
+              data={sleepDurationData}
+              width={screenWidth - 40}
+              height={220}
+              chartConfig={chartConfig}
+              bezier
+              style={styles.chart}
+            />
           </View>
-        </ScrollView>
+        </View>
 
         {/* Takvim Modalı */}
         {showCalendar && (
@@ -196,19 +191,21 @@ const StatisticsScreen = () => {
             </View>
           </View>
         )}
-      </View>
-    </SafeAreaView>
+      </ScrollView>
+    </SafeAreaViewContext>
   );
 };
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#121212',
   },
   container: {
     flex: 1,
-    backgroundColor: '#000',
+  },
+  contentContainer: {
+    paddingBottom: Platform.select({ ios: 90, android: 70 }),
   },
   header: {
     flexDirection: 'row',
@@ -225,13 +222,6 @@ const styles = StyleSheet.create({
   },
   calendarButton: {
     padding: 8,
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 20,
-    paddingBottom: Platform.OS === 'android' ? 20 : 0,
   },
   chartSection: {
     marginBottom: 30,
