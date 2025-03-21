@@ -6040,11 +6040,6 @@ react-is@^19.0.0:
   resolved "https://registry.npmjs.org/react-is/-/react-is-19.0.0.tgz"
   integrity sha512-H91OHcwjZsbq3ClIDHMzBShc1rotbfACdWENsmEf0IFvZ3FgGPtdHMcsv45bQ1hAbgdfiA8SnxTKfDS+x/8m2g==
 
-react-native-ble-manager@^12.1.4:
-  version "12.1.4"
-  resolved "https://registry.npmjs.org/react-native-ble-manager/-/react-native-ble-manager-12.1.4.tgz"
-  integrity sha512-APaT50CtYOvdvK2uSOErLSaC6oTjdz1S1Dx/zS749KB1VTbwmb1WfPnjCmtssX1HC+8AyJDw7MJTiYWZ2/BhHg==
-
 react-native-ble-plx@^3.5.0:
   version "3.5.0"
   resolved "https://registry.npmjs.org/react-native-ble-plx/-/react-native-ble-plx-3.5.0.tgz"
