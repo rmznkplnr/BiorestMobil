@@ -143,7 +143,7 @@ const HomeScreen = () => {
             style={styles.zScoreGradient}
           >
             <View style={styles.zScoreHeader}>
-              <Text style={styles.zScoreTitle}>Z-Skoru</Text>
+              <Text style={styles.zScoreTitle}>ZzZ-Skoru</Text>
               <TouchableOpacity>
                 <Ionicons name="information-circle-outline" size={24} color="#fff" />
               </TouchableOpacity>

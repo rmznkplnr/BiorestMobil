@@ -45,8 +45,8 @@ const TabNavigator = () => {
           backgroundColor: '#1a1a1a',
           borderTopWidth: 0,
           paddingTop: 10,
-          height: Platform.select({ ios: 80, android: 60 }),
-          paddingBottom: Platform.select({ ios: 25, android: 10 }),
+          height: Platform.select({ ios: 80, android: 70 }),
+          paddingBottom: Platform.select({ ios: 25, android: 20 }),
           position: 'absolute',
           elevation: 8,
           borderTopLeftRadius: 15,
@@ -61,11 +61,11 @@ const TabNavigator = () => {
             case 'HomeTab':
               iconName = focused ? 'home' : 'home-outline';
               break;
-            case 'StatisticsTab':
-              iconName = focused ? 'stats-chart' : 'stats-chart-outline';
-              break;
             case 'DevicesTab':
-              iconName = focused ? 'watch' : 'watch-outline';
+              iconName = focused ? 'hardware-chip' : 'hardware-chip-outline';
+              break;
+            case 'StatisticsTab':
+              iconName = focused ? 'heart' : 'heart-outline';
               break;
             case 'StoreTab':
               iconName = focused ? 'cart' : 'cart-outline';
@@ -77,7 +77,7 @@ const TabNavigator = () => {
               iconName = 'help-outline';
           }
 
-          return <Ionicons name={iconName} size={size} color={color} />;
+          return <Ionicons name={iconName} size={size} color={route.name === 'StoreTab' ? (focused ? '#09f760' : '#07b52c') : color} />;
         },
         tabBarLabel: ({ focused, color }) => {
           let label;
@@ -86,11 +86,11 @@ const TabNavigator = () => {
             case 'HomeTab':
               label = 'Ana Sayfa';
               break;
-            case 'StatisticsTab':
-              label = 'İstatistik';
-              break;
             case 'DevicesTab':
               label = 'Cihazlar';
+              break;
+            case 'StatisticsTab':
+              label = 'Sağlık';
               break;
             case 'StoreTab':
               label = 'Mağaza';
@@ -99,14 +99,18 @@ const TabNavigator = () => {
               label = 'Profil';
               break;
             default:
-              label = route.name;
+              label = '';
           }
 
           return (
-            <Text style={[
-              styles.tabLabel,
-              { color, opacity: focused ? 1 : 0.8 }
-            ]}>
+            <Text style={{ 
+              color: route.name === 'StoreTab' ? (focused ? '#09f760' : '#07b52c') : color, 
+              fontSize: 12, 
+              fontWeight: '600',
+              textShadowColor: route.name === 'StoreTab' ? 'rgba(255, 68, 68, 0.3)' : 'transparent',
+              textShadowOffset: { width: 0, height: 1 },
+              textShadowRadius: 2,
+            }}>
               {label}
             </Text>
           );
@@ -114,10 +118,10 @@ const TabNavigator = () => {
       })}
     >
       <Tab.Screen name="HomeTab" component={HomeScreen} />
-      <Tab.Screen name="StatisticsTab" component={StatisticsScreen} />
       <Tab.Screen name="DevicesTab" component={DevicesScreen} />
-      <Tab.Screen name="StoreTab" component={StoreScreen} />
+      <Tab.Screen name="StatisticsTab" component={StatisticsScreen} />
       <Tab.Screen name="ProfileTab" component={ProfileScreen} />
+      <Tab.Screen name="StoreTab" component={StoreScreen} />
     </Tab.Navigator>
   );
 };
