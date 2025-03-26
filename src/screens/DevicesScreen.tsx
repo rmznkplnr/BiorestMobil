@@ -14,11 +14,13 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { LinearGradient } from 'react-native-linear-gradient';
+import { useDevices } from '../context/DeviceContext';
 
 type DevicesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
 
 const DevicesScreen = () => {
   const navigation = useNavigation<DevicesScreenNavigationProp>();
+  const { devices } = useDevices();
 
   const gradientColors = [
     ['#1e3c72', '#2a5298'], // dark blue
@@ -32,27 +34,6 @@ const DevicesScreen = () => {
   const getGradientColors = (index: number) => {
     return gradientColors[index % gradientColors.length];
   };
-
-  const devices = [
-    {
-      id: '1',
-      name: 'Faunus Yatak Odası',
-      type: 'faunus',
-      connected: true,
-    },
-    {
-      id: '2',
-      name: 'Faunus Salon',
-      type: 'faunus',
-      connected: false,
-    },
-    {
-      id: '3',
-      name: 'Akıllı Saat',
-      type: 'watch',
-      connected: true,
-    },
-  ];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -78,7 +59,7 @@ const DevicesScreen = () => {
               <TouchableOpacity
                 key={device.id}
                 style={styles.deviceCard}
-                onPress={() => navigation.navigate('DeviceDetail', { deviceId: device.id })}
+                onPress={() => navigation.navigate('DeviceDetail', { deviceId: device.deviceId })}
               >
                 <LinearGradient
                   colors={getGradientColors(index)}
@@ -114,19 +95,17 @@ const DevicesScreen = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#121212',
   },
   container: {
     flex: 1,
-    backgroundColor: '#000',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    padding: 20,
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-    paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 28,
@@ -140,8 +119,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    padding: 10,
-    paddingBottom: Platform.OS === 'android' ? 20 : 0,
+    padding: 20,
+    paddingBottom: Platform.select({ ios: 90, android: 70 }),
   },
   devicesGrid: {
     flexDirection: 'row',
@@ -161,7 +140,7 @@ const styles = StyleSheet.create({
   },
   deviceGradient: {
     padding: 15,
-    height: 160,
+    height: 140,
   },
   deviceHeader: {
     flexDirection: 'row',
@@ -170,9 +149,9 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   connectionStatus: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   connected: {
     backgroundColor: '#4CAF50',
@@ -192,7 +171,7 @@ const styles = StyleSheet.create({
   },
   deviceType: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: 'rgba(255,255,255,0.7)',
   },
 });
 

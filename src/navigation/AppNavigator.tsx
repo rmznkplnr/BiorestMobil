@@ -12,6 +12,7 @@ import DeviceDetailScreen from '../screens/DeviceDetailScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SleepDetailsScreen from '../screens/SleepDetailsScreen';
 import StoreScreen from '../screens/StoreScreen';
+import DeviceManagementScreen from '../screens/DeviceManagementScreen';
 import { RootStackParamList, AuthStackParamList, MainTabParamList } from './types';
 import { useAuth } from '../context/AuthContext';
 
@@ -142,6 +143,14 @@ const AppNavigator = () => {
       <Stack.Screen 
         name="SleepDetails" 
         component={SleepDetailsScreen}
+        options={{
+          headerShown: false,
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen 
+        name="DeviceManagement" 
+        component={DeviceManagementScreen}
         options={{
           headerShown: false,
           presentation: 'modal',
