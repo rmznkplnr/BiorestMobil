@@ -214,6 +214,22 @@ const DeviceManagementScreen = () => {
       setTimeout(() => {
         bleManager.stopDeviceScan();
         setIsScanning(false);
+        if (devices.length === 0) {
+          Alert.alert(
+            'Cihaz Bulunamadı',
+            'Tarama süresi doldu ve cihaz bulunamadı. Lütfen cihazınızın açık olduğundan emin olun ve tekrar deneyin.',
+            [
+              {
+                text: 'Tekrar Tara',
+                onPress: startScan,
+              },
+              {
+                text: 'İptal',
+                style: 'cancel',
+              },
+            ]
+          );
+        }
       }, 15000);
 
     } catch (error) {
@@ -229,6 +245,7 @@ const DeviceManagementScreen = () => {
       bleManager.stopDeviceScan();
       
       await device.connect();
+      await device.discoverAllServicesAndCharacteristics();
 
       // Cihazı context'e ekle
       addDevice({
@@ -247,7 +264,20 @@ const DeviceManagementScreen = () => {
       ]);
     } catch (error) {
       console.error('Cihaz bağlantı hatası:', error);
-      Alert.alert('Hata', 'Cihaza bağlanırken bir hata oluştu.');
+      Alert.alert(
+        'Bağlantı Hatası',
+        'Cihaza bağlanırken bir hata oluştu. Lütfen tekrar deneyin.',
+        [
+          {
+            text: 'Tekrar Dene',
+            onPress: () => connectToDevice(device),
+          },
+          {
+            text: 'İptal',
+            style: 'cancel',
+          },
+        ]
+      );
     }
   };
 

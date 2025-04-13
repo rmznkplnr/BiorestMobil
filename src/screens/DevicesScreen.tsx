@@ -16,7 +16,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { LinearGradient } from 'react-native-linear-gradient';
 import { useDevices } from '../context/DeviceContext';
 
-type DevicesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
+type DevicesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const DevicesScreen = () => {
   const navigation = useNavigation<DevicesScreenNavigationProp>();

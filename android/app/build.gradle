@@ -84,6 +84,11 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        
+        // Health Connect için gereken maksimum SDK sürümünü belirt
+        manifestPlaceholders = [
+            healthConnectEnabled: true
+        ]
     }
 
     signingConfigs {
@@ -117,6 +122,13 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
     implementation project(':react-native-vector-icons')
+    
+    // Health Connect için gerekli bağımlılıklar
+    implementation "androidx.health.connect:connect-client:1.0.0"
+    
+    // Room kütüphanesi (yerel veri depolama için)
+    implementation "androidx.room:room-runtime:2.4.0"
+    annotationProcessor "androidx.room:room-compiler:2.4.0"
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

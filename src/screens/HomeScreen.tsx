@@ -1,17 +1,17 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions, Modal, TextInput, Alert, SafeAreaView, StatusBar, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions, Modal, TextInput, Alert, SafeAreaView, StatusBar, Platform, Animated } from 'react-native';
 import { LinearGradient } from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { LineChart } from 'react-native-chart-kit';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+
 import { RootStackParamList, MainTabParamList, SleepNotification } from '../navigation/types';
 import { AnimatedCircularProgress } from 'react-native-circular-progress';
 import { SafeAreaView as SafeAreaViewContext } from 'react-native-safe-area-context';
+import HealthConnectService from '../services/HealthConnectService';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
-type TabNavigationProp = BottomTabNavigationProp<MainTabParamList>;
 
 const HomeScreen = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -19,7 +19,10 @@ const HomeScreen = () => {
   const [sleepRating, setSleepRating] = useState(0);
   const [comment, setComment] = useState('');
   const [selectedTab, setSelectedTab] = useState<'rating' | 'details'>('details');
-
+  const [showZzzInfoModal, setShowZzzInfoModal] = useState(false);
+  const [healthData, setHealthData] = useState<any>(null);
+  const [calculatingScore, setCalculatingScore] = useState(false);
+  
   // Örnek bildirim verisi (daha sonra veritabanından gelecek)
   const [lastNightData] = useState<SleepNotification>({
     date: '21.03.2024',
@@ -108,6 +111,29 @@ const HomeScreen = () => {
           <Text style={styles.headerTitle}>Hoş Geldiniz</Text>
         </View>
 
+        {/* Google Fit Bağlantı Kartı */}
+        <TouchableOpacity 
+          style={styles.googleFitCard}
+          onPress={() => navigation.navigate('HealthData')}
+        >
+          <LinearGradient
+            colors={['#4CAF50', '#2E7D32']}
+            style={styles.googleFitGradient}
+          >
+            <View style={styles.googleFitHeader}>
+              <Ionicons name="heart" size={24} color="#fff" />
+              <Text style={styles.googleFitTitle}>Sağlık Verilerinizi Bağlayın</Text>
+            </View>
+            <Text style={styles.googleFitText}>
+              Uyku kalitenizi iyileştirmek için Google Fit üzerinden sağlık verilerinizi bağlayın.
+            </Text>
+            <View style={styles.googleFitButton}>
+              <Text style={styles.googleFitButtonText}>Sağlık Verilerini Görüntüle</Text>
+              <Ionicons name="arrow-forward" size={20} color="#fff" />
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+
         {/* Uyku Bildirimi Kartı */}
         <TouchableOpacity 
           style={styles.notificationCard}
@@ -143,8 +169,34 @@ const HomeScreen = () => {
             style={styles.zScoreGradient}
           >
             <View style={styles.zScoreHeader}>
-              <Text style={styles.zScoreTitle}>ZzZ-Skoru</Text>
-              <TouchableOpacity>
+              <View style={styles.zScoreTitleContainer}>
+                <Animated.Text 
+                  style={[
+                    styles.zScoreZ,
+                    { transform: [{ scale: 1 }] }
+                  ]}
+                >
+                  Z
+                </Animated.Text>
+                <Animated.Text 
+                  style={[
+                    styles.zScoreZ,
+                    { transform: [{ scale: 0.7 }], marginHorizontal: -5 }
+                  ]}
+                >
+                  z
+                </Animated.Text>
+                <Animated.Text 
+                  style={[
+                    styles.zScoreZ,
+                    { transform: [{ scale: 0.4 }], marginLeft: -5 }
+                  ]}
+                >
+                  Z
+                </Animated.Text>
+                <Text style={styles.zScoreTitle}>-Skoru</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowZzzInfoModal(true)}>
                 <Ionicons name="information-circle-outline" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -339,6 +391,97 @@ const HomeScreen = () => {
           </View>
         </View>
       </Modal>
+
+      {/* ZzZ Skor Bilgi Modalı */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showZzzInfoModal}
+        onRequestClose={() => setShowZzzInfoModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>ZzZ-Skoru Nedir?</Text>
+              <TouchableOpacity onPress={() => setShowZzzInfoModal(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll}>
+              <View style={styles.infoSection}>
+                <Text style={styles.infoHeader}>Bilimsel Uyku Kalite Puanı</Text>
+                <Text style={styles.infoText}>
+                  ZzZ-Skoru, uyku kalitenizi 0-100 arasında değerlendiren, çeşitli sağlık verilerini kullanan gelişmiş bir ölçüm sistemidir.
+                </Text>
+              </View>
+
+              <View style={styles.infoSection}>
+                <Text style={styles.infoHeader}>Hesaplama Formülü</Text>
+                <Text style={styles.infoText}>
+                  ZzZ-Skoru, aşağıdaki faktörlerden oluşan bir algoritma kullanır:
+                </Text>
+                <View style={styles.bulletList}>
+                  <View style={styles.bulletItem}>
+                    <View style={styles.bullet} />
+                    <Text style={styles.bulletText}>Uyku Süresi (20p): İdeal 7-8 saat</Text>
+                  </View>
+                  <View style={styles.bulletItem}>
+                    <View style={styles.bullet} />
+                    <Text style={styles.bulletText}>Uyku Verimliliği (15p): %85+ verimlilik</Text>
+                  </View>
+                  <View style={styles.bulletItem}>
+                    <View style={styles.bullet} />
+                    <Text style={styles.bulletText}>Derin Uyku Oranı (15p): İdeal %20-25</Text>
+                  </View>
+                  <View style={styles.bulletItem}>
+                    <View style={styles.bullet} />
+                    <Text style={styles.bulletText}>REM Uyku Oranı (15p): İdeal %20-25</Text>
+                  </View>
+                  <View style={styles.bulletItem}>
+                    <View style={styles.bullet} />
+                    <Text style={styles.bulletText}>Dinlenme Kalp Hızı (10p): İdeal 60 bpm altı</Text>
+                  </View>
+                  <View style={styles.bulletItem}>
+                    <View style={styles.bullet} />
+                    <Text style={styles.bulletText}>Stres Seviyesi (10p): Düşük stres daha iyi</Text>
+                  </View>
+                  <View style={styles.bulletItem}>
+                    <View style={styles.bullet} />
+                    <Text style={styles.bulletText}>Kalp Atış Değişkenliği (5p): Yüksek HRV daha iyi</Text>
+                  </View>
+                </View>
+                <Text style={styles.infoText}>
+                  Baz skor 70 puan olup, her faktör kendi ağırlığıyla katkıda bulunur. Formülün bilimsel temelleri güncel uyku ve sağlık araştırmalarına dayanmaktadır.
+                </Text>
+              </View>
+
+              <View style={styles.infoSection}>
+                <Text style={styles.infoHeader}>Skor Yorumlaması</Text>
+                <View style={styles.scoreRow}>
+                  <View style={[styles.scoreIndicator, { backgroundColor: '#2ecc71' }]} />
+                  <Text style={styles.scoreText}>80-100: Mükemmel uyku kalitesi</Text>
+                </View>
+                <View style={styles.scoreRow}>
+                  <View style={[styles.scoreIndicator, { backgroundColor: '#f1c40f' }]} />
+                  <Text style={styles.scoreText}>60-79: İyi uyku kalitesi</Text>
+                </View>
+                <View style={styles.scoreRow}>
+                  <View style={[styles.scoreIndicator, { backgroundColor: '#e74c3c' }]} />
+                  <Text style={styles.scoreText}>0-59: Geliştirilebilir uyku kalitesi</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowZzzInfoModal(false)}
+              >
+                <Text style={styles.closeButtonText}>Anladım</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaViewContext>
   );
 };
@@ -382,10 +525,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  zScoreTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  zScoreZ: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
   zScoreTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
+    marginLeft: 2,
   },
   zScoreContent: {
     alignItems: 'center',
@@ -676,6 +829,114 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     opacity: 0.8,
+  },
+  googleFitCard: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 15,
+    overflow: 'hidden',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  googleFitGradient: {
+    padding: 20,
+    borderRadius: 15,
+  },
+  googleFitHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  googleFitTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  googleFitText: {
+    color: '#fff',
+    fontSize: 14,
+    marginBottom: 15,
+  },
+  googleFitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+  },
+  googleFitButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    marginRight: 5,
+  },
+  infoSection: {
+    marginBottom: 20,
+  },
+  infoHeader: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 10,
+  },
+  infoText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  bulletList: {
+    marginVertical: 10,
+  },
+  bulletItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  bullet: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4a90e2',
+    marginRight: 10,
+  },
+  bulletText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+    flex: 1,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  scoreIndicator: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 10,
+  },
+  scoreText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  closeButton: {
+    backgroundColor: '#4a90e2',
+    borderRadius: 8,
+    padding: 15,
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  closeButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
   },
 });
 

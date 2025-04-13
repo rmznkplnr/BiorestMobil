@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,24 +9,98 @@ import {
   StatusBar,
   Platform,
   Image,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
+import { getCurrentUser, fetchUserAttributes, signOut } from 'aws-amplify/auth';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const ProfileScreen = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
+  const [loading, setLoading] = useState(false);
+  const [userData, setUserData] = useState<any>(null);
+  const [loadingUserData, setLoadingUserData] = useState(true);
 
-  const handleLogout = () => {
-    // Çıkış işlemleri burada yapılacak
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Auth' }],
-    });
+  // Kullanıcı bilgilerini AWS Cognito'dan al
+  useEffect(() => {
+    fetchUserData();
+  }, []);
+
+  const fetchUserData = async () => {
+    try {
+      setLoadingUserData(true);
+      const user = await getCurrentUser();
+      console.log('Kullanıcı bilgileri:', user);
+      
+      try {
+        // Kullanıcı özelliklerini al
+        const userAttributes = await fetchUserAttributes();
+        
+        setUserData({
+          username: user.username,
+          email: userAttributes.email || user.username,
+          name: userAttributes.name || user.username,
+          phone: userAttributes.phone_number || '',
+        });
+      } catch (attributeError) {
+        console.log('Kullanıcı özellikleri alınamadı:', attributeError);
+        // Temel kullanıcı bilgileriyle devam et
+        setUserData({
+          username: user.username,
+          email: user.username,
+          name: user.username,
+          phone: '',
+        });
+      }
+    } catch (error) {
+      console.log('Kullanıcı bilgileri alınamadı:', error);
+      // Kullanıcı bulunmazsa login sayfasına yönlendir
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Auth' }],
+      });
+    } finally {
+      setLoadingUserData(false);
+    }
   };
+
+  const handleLogout = async () => {
+    try {
+      setLoading(true);
+      
+      // AWS Cognito çıkış işlemi
+      await signOut();
+      console.log('Başarıyla çıkış yapıldı');
+      
+      // Giriş ekranına yönlendir
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Auth' }],
+      });
+    } catch (error) {
+      console.log('Çıkış yaparken hata oluştu:', error);
+      Alert.alert('Hata', 'Çıkış yapılırken bir sorun oluştu. Lütfen tekrar deneyin.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loadingUserData) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4a90e2" />
+          <Text style={styles.loadingText}>Bilgiler yükleniyor...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -52,8 +126,8 @@ const ProfileScreen = () => {
                 <Ionicons name="camera" size={20} color="#fff" />
               </TouchableOpacity>
             </View>
-            <Text style={styles.userName}>Ramazan Kaplaner</Text>
-            <Text style={styles.userEmail}>biorest@gmail.com</Text>
+            <Text style={styles.userName}>{userData?.name || 'Kullanıcı'}</Text>
+            <Text style={styles.userEmail}>{userData?.email || 'kullanici@example.com'}</Text>
           </View>
 
           {/* Ayarlar Menüsü */}
@@ -97,9 +171,16 @@ const ProfileScreen = () => {
           <TouchableOpacity 
             style={styles.logoutButton}
             onPress={handleLogout}
+            disabled={loading}
           >
-            <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
-            <Text style={styles.logoutText}>Çıkış Yap</Text>
+            {loading ? (
+              <ActivityIndicator color="#e74c3c" />
+            ) : (
+              <>
+                <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
+                <Text style={styles.logoutText}>Çıkış Yap</Text>
+              </>
+            )}
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -135,6 +216,16 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 20,
     paddingBottom: Platform.OS === 'android' ? 20 : 0,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#fff',
+    marginTop: 10,
+    fontSize: 16,
   },
   profileSection: {
     alignItems: 'center',

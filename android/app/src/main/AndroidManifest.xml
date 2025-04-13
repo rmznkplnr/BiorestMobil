@@ -1,5 +1,7 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+    
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -8,6 +10,40 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
+    
+    <!-- Health Connect izinleri -->
+    <!-- react-native-health-connect paketi için gerekli -->
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE"/>
+    <uses-permission android:name="android.permission.health.WRITE_HEART_RATE"/>
+    <uses-permission android:name="android.permission.health.READ_STEPS"/>
+    <uses-permission android:name="android.permission.health.WRITE_STEPS"/>
+    <uses-permission android:name="android.permission.health.READ_SLEEP"/>
+    <uses-permission android:name="android.permission.health.WRITE_SLEEP"/>
+    <uses-permission android:name="android.permission.health.READ_WEIGHT"/>
+    <uses-permission android:name="android.permission.health.WRITE_WEIGHT"/>
+    <uses-permission android:name="android.permission.health.READ_BLOOD_PRESSURE"/>
+    <uses-permission android:name="android.permission.health.WRITE_BLOOD_PRESSURE"/>
+    <uses-permission android:name="android.permission.health.READ_BLOOD_OXYGEN"/>
+    <uses-permission android:name="android.permission.health.WRITE_BLOOD_OXYGEN"/>
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP_SESSION" />
+    <uses-permission android:name="android.permission.health.READ_STEPS_CADENCE" />
+    <uses-permission android:name="android.permission.health.READ_BLOOD_GLUCOSE" />
+    <uses-permission android:name="android.permission.health.READ_BODY_TEMPERATURE" />
+    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
+    
+    <!-- Eklenen yeni izinler (Mi Band için) -->
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP_STAGE" />
+    <uses-permission android:name="android.permission.health.WRITE_SLEEP_STAGE" />
+    <uses-permission android:name="android.permission.health.READ_BASAL_METABOLIC_RATE" />
 
     <application
       android:name=".MainApplication"
@@ -16,6 +52,7 @@
       android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
       android:theme="@style/AppTheme"
+      android:usesCleartextTraffic="true"
       android:supportsRtl="true">
       <activity
         android:name=".MainActivity"
@@ -28,6 +65,39 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+               <!-- For supported versions through Android 13, create an activity to show the rationale
+            of Health Connect permissions once users click the privacy policy link. -->
+       <intent-filter>
+         <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+       </intent-filter>
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="biorestmobile" />
+        </intent-filter>
       </activity>
+
+      <activity
+       android:name=".PermissionsRationaleActivity"
+       android:exported="true">
+       <intent-filter>
+         <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+       </intent-filter>
+      </activity>
+ 
+     <!-- For versions starting Android 14, create an activity alias to show the rationale
+          of Health Connect permissions once users click the privacy policy link. -->
+     <activity-alias
+       android:name="ViewPermissionUsageActivity"
+       android:exported="true"
+       android:targetActivity=".MainActivity"
+       android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+       <intent-filter>
+         <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+         <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+       </intent-filter>
+     </activity-alias>
+
     </application>
 </manifest>

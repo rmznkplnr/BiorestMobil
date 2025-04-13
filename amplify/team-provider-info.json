@@ -1,0 +1,30 @@
+{
+  "dev": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-biorestmobil-dev-9fea3-authRole",
+      "UnauthRoleArn": "arn:aws:iam::711387131865:role/amplify-biorestmobil-dev-9fea3-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::711387131865:role/amplify-biorestmobil-dev-9fea3-authRole",
+      "Region": "eu-north-1",
+      "DeploymentBucketName": "amplify-biorestmobil-dev-9fea3-deployment",
+      "UnauthRoleName": "amplify-biorestmobil-dev-9fea3-unauthRole",
+      "StackName": "amplify-biorestmobil-dev-9fea3",
+      "StackId": "arn:aws:cloudformation:eu-north-1:711387131865:stack/amplify-biorestmobil-dev-9fea3/9cc8e2e0-0fdf-11f0-830b-0e399e886ac9",
+      "AmplifyAppId": "d26gt8bfj8p5x5",
+      "APIGatewayAuthURL": "https://s3.amazonaws.com/amplify-biorestmobil-dev-9fea3-deployment/amplify-cfn-templates/api/APIGatewayAuthStack.json"
+    },
+    "categories": {
+      "auth": {
+        "biorestmobilebd0d82d": {}
+      },
+      "function": {
+        "newpostUserData": {
+          "deploymentBucketName": "amplify-biorestmobil-dev-9fea3-deployment",
+          "s3Key": "amplify-builds/newpostUserData-34782f4d6e38752b4f70-build.zip"
+        }
+      },
+      "api": {
+        "bionewapi": {}
+      }
+    }
+  }
+}

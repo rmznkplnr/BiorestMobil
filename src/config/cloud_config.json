@@ -1,0 +1,8 @@
+{
+  "google_fit": {
+    "web_client_id": "YOUR_WEB_CLIENT_ID_HERE",
+    "android_client_id": "YOUR_ANDROID_CLIENT_ID_HERE",
+    "api_key": "YOUR_API_KEY_HERE",
+    "package_name": "com.biorestmobil"
+  }
+} 
