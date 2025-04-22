@@ -15,7 +15,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { signIn, signOut, confirmSignUp, resetPassword, getCurrentUser } from 'aws-amplify/auth';
+import { Auth } from 'aws-amplify';
 import { LinearGradient } from 'react-native-linear-gradient';
 
 // Logo importu
@@ -40,7 +40,7 @@ const LoginScreen = () => {
         setInitializing(true);
         
         // Zaten giriş yapmış bir kullanıcı var mı?
-        const user = await getCurrentUser();
+        const user = await Auth.currentAuthenticatedUser();
         console.log('Kullanıcı zaten giriş yapmış:', user.username);
         
         // Ana ekrana yönlendir
@@ -68,16 +68,14 @@ const LoginScreen = () => {
     try {
       console.log('Giriş yapılıyor:', { email });
       
-      // SRP Auth ile giriş
-      const { isSignedIn, nextStep } = await signIn({ username: email, password });
+      // SRP Auth ile giriş - Gen 1 formatı
+      const user = await Auth.signIn(email, password);
       
-      console.log('Giriş başarılı:', isSignedIn, nextStep);
+      console.log('Giriş başarılı:', user);
       
-      if (isSignedIn) {
+      if (user) {
         // Ana ekrana git
         navigation.replace('Main');
-      } else if (nextStep.signInStep === 'CONFIRM_SIGN_UP') {
-        navigation.navigate('ConfirmAccount', { email });
       }
     } catch (error: any) {
       console.log('Giriş hatası:', error?.message || 'Bilinmeyen hata');
@@ -130,8 +128,7 @@ const LoginScreen = () => {
     setError(null);
     
     try {
-      const { nextStep } = await resetPassword({ username: email });
-      console.log('Şifre sıfırlama adımı:', nextStep);
+      await Auth.forgotPassword(email);
       
       Alert.alert(
         'Şifre Sıfırlama',
@@ -158,13 +155,10 @@ const LoginScreen = () => {
     try {
       console.log('Manuel giriş yapılıyor:', { email });
       
-      // USER_PASSWORD_AUTH ile giriş - Doğrudan kimlik bilgilerini göndererek
-      const { isSignedIn } = await signIn({
-        username: email,
-        password: password
-      });
+      // Gen 1 formatında signIn
+      const user = await Auth.signIn(email, password);
       
-      console.log('Manuel giriş başarılı:', isSignedIn);
+      console.log('Manuel giriş başarılı:', user);
       Alert.alert('Giriş Başarılı', 'Ana sayfaya yönlendiriliyorsunuz.');
       navigation.replace('Main');
     } catch (error: any) {

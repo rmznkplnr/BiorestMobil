@@ -15,7 +15,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { signUp } from 'aws-amplify/auth';
+import { Auth } from 'aws-amplify';
 import { LinearGradient } from 'react-native-linear-gradient';
 
 // Logo importu
@@ -67,22 +67,51 @@ const RegisterScreen = () => {
       console.log('Kayıt işlemi başlatılıyor...');
       console.log('Giriş bilgileri:', { email, password: '********' });
 
-      // AWS Amplify v6 için signUp işlemi
-      const result = await signUp({
+      // AWS Amplify Gen 1 için signUp işlemi
+      const result = await Auth.signUp({
         username: email,
         password,
-        options: {
-          userAttributes: {
-            email,
-            name: email.split('@')[0], // İsim olarak e-posta kullanıcı adını al
-          }
+        attributes: {
+          email
         }
       });
 
       console.log('Kayıt cevabı:', JSON.stringify(result));
 
-      // Doğrulama ekranına yönlendir
-      navigation.navigate('ConfirmAccount', { email });
+      if (result.userConfirmed) {
+        try {
+          // Kayıt başarılı olduktan sonra otomatik giriş yap
+          const user = await Auth.signIn(email, password);
+          
+          console.log('Otomatik giriş başarılı:', user);
+          
+          Alert.alert(
+            'Kayıt Başarılı',
+            'Hesabınız oluşturuldu ve giriş yapıldı.',
+            [
+              {
+                text: 'Tamam',
+                onPress: () => navigation.navigate('Main')
+              }
+            ]
+          );
+        } catch (signInError) {
+          console.log('Otomatik giriş hatası:', signInError);
+          Alert.alert(
+            'Kayıt Başarılı',
+            'Hesabınız oluşturuldu. Lütfen giriş yapın.',
+            [
+              {
+                text: 'Tamam',
+                onPress: () => navigation.navigate('Auth')
+              }
+            ]
+          );
+        }
+      } else {
+        // Eğer doğrulama gerekiyorsa
+        navigation.navigate('ConfirmAccount', { email });
+      }
     } catch (error: any) {
       console.log('HATA TÜRÜ:', typeof error);
       

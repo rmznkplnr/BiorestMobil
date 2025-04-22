@@ -16,7 +16,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { getCurrentUser, fetchUserAttributes, signOut } from 'aws-amplify/auth';
+import { Auth } from 'aws-amplify';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -34,18 +34,24 @@ const ProfileScreen = () => {
   const fetchUserData = async () => {
     try {
       setLoadingUserData(true);
-      const user = await getCurrentUser();
+      const user = await Auth.currentAuthenticatedUser();
       console.log('Kullanıcı bilgileri:', user);
       
       try {
         // Kullanıcı özelliklerini al
-        const userAttributes = await fetchUserAttributes();
+        const userAttributes = await Auth.userAttributes(user);
+        const attributes: Record<string, string> = {};
+        
+        // Öznitelikleri eşleştir
+        userAttributes.forEach(attribute => {
+          attributes[attribute.Name] = attribute.Value;
+        });
         
         setUserData({
           username: user.username,
-          email: userAttributes.email || user.username,
-          name: userAttributes.name || user.username,
-          phone: userAttributes.phone_number || '',
+          email: attributes.email || user.username,
+          name: attributes.name || user.username,
+          phone: attributes.phone_number || '',
         });
       } catch (attributeError) {
         console.log('Kullanıcı özellikleri alınamadı:', attributeError);
@@ -74,7 +80,7 @@ const ProfileScreen = () => {
       setLoading(true);
       
       // AWS Cognito çıkış işlemi
-      await signOut();
+      await Auth.signOut();
       console.log('Başarıyla çıkış yapıldı');
       
       // Giriş ekranına yönlendir

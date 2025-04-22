@@ -14,7 +14,7 @@ import {
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { confirmSignUp, resendSignUpCode } from 'aws-amplify/auth';
+import { Auth } from 'aws-amplify';
 import { LinearGradient } from 'react-native-linear-gradient';
 
 type ConfirmAccountScreenRouteProp = RouteProp<RootStackParamList, 'ConfirmAccount'>;
@@ -42,10 +42,7 @@ const ConfirmAccountScreen = () => {
 
       console.log('Doğrulama kodu gönderiliyor:', { email, code: confirmationCode });
 
-      await confirmSignUp({
-        username: email,
-        confirmationCode
-      });
+      await Auth.confirmSignUp(email, confirmationCode);
 
       console.log('Doğrulama başarılı');
 
@@ -85,10 +82,8 @@ const ConfirmAccountScreen = () => {
       setLoading(true);
 
       console.log('Doğrulama kodu yeniden gönderiliyor:', email);
-      const result = await resendSignUpCode({
-        username: email
-      });
-      console.log('Yeniden gönderme sonucu:', result);
+      await Auth.resendSignUp(email);
+      console.log('Yeniden gönderme başarılı');
 
       Alert.alert(
         'Kod Yeniden Gönderildi',

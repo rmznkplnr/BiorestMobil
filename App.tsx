@@ -12,42 +12,15 @@ import ConfirmAccountScreen from './src/screens/ConfirmAccountScreen';
 import HealthDataScreen from './src/screens/HealthDataScreen';
 import SleepDetailsScreen from './src/screens/SleepDetailsScreen';
 import { DeviceProvider } from './src/context/DeviceContext';
-import { Amplify } from 'aws-amplify';
-import { getCurrentUser, fetchUserAttributes } from 'aws-amplify/auth';
-import { Hub } from '@aws-amplify/core';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import awsconfig from './src/aws-exports';
 import { Alert, Text, View, ActivityIndicator, StyleSheet } from 'react-native';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
+import awsconfig from './src/aws-exports';
+import { Auth, API, Hub, Amplify } from 'aws-amplify';
 
-// AWS Amplify yapılandırmasını try-catch içerisinde yap
-try {
-  console.log('AWS yapılandırma başlıyor...');
-  
-  // AWS Amplify 6.0.12 için yapılandırma
-  Amplify.configure({
-    Auth: {
-      Cognito: {
-        userPoolId: 'eu-north-1_DHHJ0C4pT',
-        userPoolClientId: '6ipc3uf3ekfuimrj3378p76nua',
-        identityPoolId: 'eu-north-1:a5f08c8f-e48e-4da6-999b-15c3d2d08067',
-        loginWith: {
-          oauth: {
-            domain: 'eu-north-1dhhj0c4pt.auth.eu-north-1.amazoncognito.com',
-            scopes: ['email', 'profile', 'openid'],
-            redirectSignIn: ['biorestmobil://'],
-            redirectSignOut: ['biorestmobil://'],
-            responseType: 'code'
-          }
-        }
-      }
-    }
-  });
-  
-  console.log('AWS yapılandırma tamamlandı');
-} catch (error) {
-  console.error('Amplify yapılandırma hatası:', error);
-}
+// Amplify yapılandırması
+console.log('App.tsx: Amplify yapılandırması başlıyor');
+Amplify.configure(awsconfig);
+console.log('App.tsx: Amplify yapılandırması tamamlandı - Auth modu: AMAZON_COGNITO_USER_POOLS');
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -60,9 +33,9 @@ const App = () => {
     // Auth durumu kontrol et
     const checkAuthStatus = async () => {
       try {
-        await getCurrentUser();
+        await Auth.currentAuthenticatedUser();
         console.log('Kullanıcı giriş yapmış');
-        setIsAuthenticated(false); // Her uygulama başlangıcında login sayfasını göster
+        setIsAuthenticated(true);
       } catch (error) {
         console.log('Kullanıcı giriş yapmamış');
         setIsAuthenticated(false);
@@ -76,13 +49,13 @@ const App = () => {
       const { payload } = data;
       console.log('Auth event:', payload.event);
       
-      if (payload.event === 'signedIn') {
+      if (payload.event === 'signIn') {
         console.log('Kullanıcı giriş yaptı');
         setIsAuthenticated(true);
-      } else if (payload.event === 'signedOut') {
+      } else if (payload.event === 'signOut') {
         console.log('Kullanıcı çıkış yaptı');
         setIsAuthenticated(false);
-      } else if (payload.event === 'signInWithRedirect_failure') {
+      } else if (payload.event === 'signIn_failure') {
         console.log('Giriş başarısız oldu:', payload);
         
         // Basit hata mesajı

@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StyleSheet, Platform, TouchableOpacity, View, Text, Dimensions, Animated } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { getCurrentUser } from 'aws-amplify/auth';
+import { Auth } from 'aws-amplify';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import HomeScreen from '../screens/HomeScreen';
@@ -216,8 +216,8 @@ const TabNavigator = () => {
       setIsCheckingAuth(true);
       try {
         // Kullanıcı giriş yapmış mı kontrol et
-        const user = await getCurrentUser();
-        console.log('TabNavigator: Kullanıcı giriş yapmış', user.userId);
+        const user = await Auth.currentAuthenticatedUser();
+        console.log('TabNavigator: Kullanıcı giriş yapmış', user.username);
       } catch (error) {
         // Eğer kullanıcı giriş yapmamışsa, giriş sayfasına yönlendir
         console.log('TabNavigator: Kullanıcı giriş yapmamış, giriş sayfasına yönlendiriliyor');
@@ -245,7 +245,7 @@ const TabNavigator = () => {
     React.useCallback(() => {
       const checkAuthOnFocus = async () => {
         try {
-          await getCurrentUser();
+          await Auth.currentAuthenticatedUser();
           console.log('TabNavigator Focus: Kullanıcı giriş yapmış');
         } catch (error) {
           console.log('TabNavigator Focus: Kullanıcı giriş yapmamış, giriş sayfasına yönlendiriliyor');

@@ -5,17 +5,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
   Alert,
-  SafeAreaView,
   StatusBar,
   Platform,
-  Linking,
   GestureResponderEvent,
   Animated,
   Dimensions,
   Modal,
-  TouchableWithoutFeedback,
   RefreshControl,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -26,12 +22,14 @@ import { RootStackParamList } from '../navigation/types';
 import HealthConnectService from '../services/HealthConnectService';
 
 import { SafeAreaView as SafeAreaViewContext } from 'react-native-safe-area-context';
-import SleepChart from '../components/SleepChart';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import { AnimatedCircularProgress } from 'react-native-circular-progress';
+import HealthDataService from '../services/HealthDataService';
+import { Auth } from 'aws-amplify';
+import awsconfig from '../aws-exports';
 
 type HealthDataScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
 
 interface HealthData {
   heartRate: {
@@ -89,34 +87,7 @@ interface HealthData {
   };
 }
 
-interface ChartProps {
-  data: { labels: string[]; datasets: { data: number[]; color?: (opacity?: number) => string; strokeWidth?: number }[] };
-  width: number;
-  height: number;
-  chartConfig: {
-    backgroundGradientFrom: string;
-    backgroundGradientTo: string;
-    decimalPlaces?: number;
-    color: (opacity?: number) => string;
-    labelColor: (opacity?: number) => string;
-    style?: any;
-    propsForDots?: any;
-    propsForBackgroundLines?: any;
-  };
-  bezier?: boolean;
-  style?: any;
-  withDots?: boolean;
-  withShadow?: boolean;
-  withInnerLines?: boolean;
-  withOuterLines?: boolean;
-  withHorizontalLines?: boolean;
-  withVerticalLines?: boolean;
-  yAxisLabel?: string;
-  yAxisSuffix?: string;
-  formatYLabel?: (label: string) => string;
-  fromZero?: boolean;
-  onDataPointClick?: (data: { value: number; dataset: any; getColor: (opacity: number) => string; index: number; x: number; y: number }) => void;
-}
+
 
 interface SelectedPoint {
   value: number;
@@ -129,7 +100,6 @@ interface SelectedPoint {
 
 const HealthDataScreen = () => {
   const navigation = useNavigation<HealthDataScreenNavigationProp>();
-  const [showRatingModal, setShowRatingModal] = useState(false);
   const [isHealthConnectAvailable, setIsHealthConnectAvailable] = useState(false);
   const [isHealthConnectInstalled, setIsHealthConnectInstalled] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
@@ -204,9 +174,29 @@ const HealthDataScreen = () => {
   };
 
   useEffect(() => {
+    const checkConfig = async () => {
+      // AWS yapılandırmasını ve auth durumunu kontrol et
+      await HealthDataService.checkConfigAndAuth();
+    };
+    
+    checkConfig();
+    
+    // Diğer başlangıç işlemleri...
     checkHealthConnectAvailability();
-    // İzinleri kontrol et
-    checkHealthConnectPermissions();
+    
+    // Veri çekme işlemi için gecikme ekle - Auth/API senkronizasyonu için zaman tanı
+    const timer = setTimeout(() => {
+      console.log('Gecikmeli sağlık verisi çekimi başlatılıyor...');
+      fetchHealthData();
+    }, 1000);
+    
+    // Memory leak önleme için temizleme
+    return () => {
+      clearTimeout(timer);
+      if (dataFetchTimeoutRef.current) {
+        clearTimeout(dataFetchTimeoutRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -392,13 +382,29 @@ const HealthDataScreen = () => {
 
   const fetchHealthData = async () => {
     try {
+
       console.log(`${timeRange} için sağlık verileri alınıyor...`);
-      
-      if (!isHealthConnectAvailable) {
-        console.log('Health Connect bağlantısı yok. İzinleri kontrol et.');
+      try {
+        const session = await Auth.currentSession();
+        console.log('Oturum durumu:', session ? 'Aktif' : 'Pasif');
+        
+        if (!session) {
+          console.log('Oturum açık değil, sağlık verileri senkronize edilemiyor');
+          Alert.alert(
+            'Oturum Hatası',
+            'Sağlık verilerini görüntülemek için lütfen tekrar giriş yapın',
+            [{ text: 'Tamam', onPress: () => navigation.navigate('Auth') }]
+          );
+          setLoading(false);
+          return;
+        }
+      } catch (authError) {
+        console.error('Oturum kontrolünde hata:', authError);
         setLoading(false);
         return;
       }
+      
+      
       
       const endDate = new Date();
       let startDate = new Date();
@@ -428,6 +434,16 @@ const HealthDataScreen = () => {
         console.log('Health Connect\'ten veriler alındı:', Object.keys(rawData || {}));
         const processedData = processHealthConnectData(rawData);
         setHealthData(processedData);
+        try {
+          // API yapılandırmasını Cognito User Pool olarak logla
+          console.log('GraphQL Endpoint:', awsconfig.aws_appsync_graphqlEndpoint);
+          console.log('Auth Type:', 'userPool (Cognito User Pool)');
+          
+          // Ardından senkronizasyon işlemini gerçekleştirin
+          await syncHealthData(processedData);
+        } catch (syncError) {
+          console.error('Veri senkronizasyon hatası:', syncError);
+        }
       } else {
         console.error('Health Connect\'ten veri alınamadı');
       }
@@ -435,6 +451,71 @@ const HealthDataScreen = () => {
       console.error('Sağlık verileri alınırken hata:', error);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const syncHealthData = async (processedData: HealthData) => {
+    try {
+      // Cognito User Pool kullanıldığını belirt
+      console.log('Kimlik doğrulama tipi: userPool (Cognito)');
+      
+      // Session kontrolü yap
+      const session = await Auth.currentSession();
+      if (!session) {
+        console.log('Aktif oturum bulunamadı, giriş yapmanız gerekiyor');
+        Alert.alert(
+          'Oturum Hatası',
+          'Verilerinizi kaydetmek için tekrar giriş yapmanız gerekiyor.',
+          [
+            { 
+              text: 'Giriş Yap', 
+              onPress: () => navigation.navigate('Auth') 
+            },
+            { 
+              text: 'İptal',
+              style: 'cancel'
+            }
+          ]
+        );
+        return;
+      }
+      
+      // HealthDataService üzerinden kimlik doğrulama kontrolü
+      const isAuthenticated = await HealthDataService.isAuthReady();
+      
+      if (isAuthenticated) {
+        // Sağlık verilerini Cognito kimliği ile senkronize et
+        await HealthDataService.syncHealthData({
+          heartRate: processedData.heartRate?.average || null,
+          oxygen: processedData.oxygen?.average || null,
+          sleep: processedData.sleep?.deepSleep || null,
+          steps: processedData.steps?.count || null,
+          calories: processedData.calories?.value || null
+        });
+        console.log('Sağlık verileri Cognito kullanıcı havuzu üzerinden başarıyla senkronize edildi');
+      } else {
+        console.log('Cognito oturumu aktif değil, veriler senkronize edilemedi');
+        Alert.alert(
+          'Oturum Süresi Doldu',
+          'Oturum süreniz dolmuş. Lütfen tekrar giriş yapın.',
+          [{ text: 'Tamam', onPress: () => navigation.navigate('Auth') }]
+        );
+      }
+    } catch (error: any) {
+      console.error('DynamoDB senkronizasyonu sırasında hata:', error);
+      // Daha detaylı hata bilgisi logla
+      if (error.message) console.error('Hata mesajı:', error.message);
+      if (error.code) console.error('Hata kodu:', error.code);
+      if (error.name) console.error('Hata tipi:', error.name);
+      
+      // Kullanıcıya oturum problemi bildirimi göster
+      if (error.message?.includes('authentication') || error.message?.includes('authenticated') || error.message?.includes('credentials')) {
+        Alert.alert(
+          'Kimlik Doğrulama Hatası',
+          'Oturumunuzda bir sorun oluştu. Lütfen yeniden giriş yapın.',
+          [{ text: 'Giriş Yap', onPress: () => navigation.navigate('Auth') }]
+        );
+      }
     }
   };
 
@@ -2036,11 +2117,8 @@ const HealthDataScreen = () => {
     }
   };
 
-  /**
-   * Health Connect servisine bağlanmak için gereken koşulları kontrol eder
-   * ve uygun yönlendirmeyi yapar (Health Connect yüklü değilse indirme sayfasına,
-   * yüklü ise Health Connect'in izin sayfasına yönlendirir)
-   */
+
+ 
   const handleHealthConnectAccess = async () => {
     console.log('Health Connect erişimi kontrol ediliyor...');
     const installed = await HealthConnectService.isInstalled();
@@ -2301,6 +2379,7 @@ const HealthDataScreen = () => {
     </SafeAreaViewContext>
   );
 };
+
 
 const styles = StyleSheet.create({
   safeArea: {
