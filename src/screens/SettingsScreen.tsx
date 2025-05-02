@@ -9,21 +9,105 @@ import {
   StatusBar,
   Platform,
   Switch,
+  Alert,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useNavigation } from '@react-navigation/native';
+import { Auth } from 'aws-amplify';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+
+type SettingsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const SettingsScreen = () => {
+  const navigation = useNavigation<SettingsScreenNavigationProp>();
   const [notifications, setNotifications] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
   const [sleepReminders, setSleepReminders] = useState(true);
   const [dataSync, setDataSync] = useState(true);
+  const [healthSyncEnabled, setHealthSyncEnabled] = useState(true);
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
+
+  const handleSignOut = async () => {
+    try {
+      await Auth.signOut();
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Auth' }],
+      });
+    } catch (error) {
+      console.error('Çıkış yapılırken hata oluştu:', error);
+      Alert.alert('Hata', 'Çıkış yapılırken bir sorun oluştu. Lütfen tekrar deneyin.');
+    }
+  };
+
+  const renderSettingSection = (
+    title: string, 
+    items: Array<{
+      icon: string;
+      label: string;
+      value?: boolean;
+      onToggle?: (newValue: boolean) => void;
+      onPress?: () => void;
+      rightIcon?: string;
+      description?: string;
+    }>
+  ) => {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {items.map((item, index) => (
+          <View key={index} style={[
+            styles.settingItem,
+            index === items.length - 1 && { borderBottomWidth: 0 }
+          ]}>
+            <View style={styles.settingLeft}>
+              <Ionicons name={item.icon} size={24} color="#4a90e2" style={styles.settingIcon} />
+              <View>
+                <Text style={styles.settingLabel}>{item.label}</Text>
+                {item.description && (
+                  <Text style={styles.settingDescription}>{item.description}</Text>
+                )}
+              </View>
+            </View>
+            <View style={styles.settingRight}>
+              {item.value !== undefined && item.onToggle && (
+                <Switch
+                  value={item.value}
+                  onValueChange={item.onToggle}
+                  trackColor={{ false: '#3e3e3e', true: '#81b0ff' }}
+                  thumbColor={item.value ? '#4a90e2' : '#f4f3f4'}
+                  ios_backgroundColor="#3e3e3e"
+                />
+              )}
+              {item.rightIcon && (
+                <Ionicons name={item.rightIcon} size={20} color="#777" />
+              )}
+              {item.onPress && !item.value && (
+                <TouchableOpacity onPress={item.onPress}>
+                  <Ionicons name="chevron-forward" size={20} color="#777" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
       <View style={styles.container}>
         <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Ayarlar</Text>
+          <View style={{ width: 24 }} />
         </View>
 
         <ScrollView 
@@ -31,105 +115,115 @@ const SettingsScreen = () => {
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
         >
-          {/* Bildirim Ayarları */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Bildirimler</Text>
-            
-            <View style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <Ionicons name="notifications-outline" size={24} color="#4a90e2" />
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Bildirimler</Text>
-                  <Text style={styles.settingDescription}>Tüm bildirimleri aç/kapat</Text>
-                </View>
-              </View>
-              <Switch
-                value={notifications}
-                onValueChange={setNotifications}
-                trackColor={{ false: '#333', true: '#4a90e2' }}
-                thumbColor={notifications ? '#fff' : '#f4f3f4'}
-              />
-            </View>
+          {renderSettingSection('Görünüm', [
+            {
+              icon: 'moon-outline',
+              label: 'Karanlık Mod',
+              value: darkMode,
+              onToggle: setDarkMode,
+            },
+            {
+              icon: 'color-palette-outline',
+              label: 'Tema Rengi',
+              rightIcon: 'chevron-forward',
+              onPress: () => Alert.alert('Bilgi', 'Bu özellik yakında gelecek'),
+            },
+            {
+              icon: 'text-outline',
+              label: 'Yazı Tipi Boyutu',
+              rightIcon: 'chevron-forward',
+              onPress: () => Alert.alert('Bilgi', 'Bu özellik yakında gelecek'),
+            },
+          ])}
 
-            <View style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <Ionicons name="bed-outline" size={24} color="#4a90e2" />
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Uyku Hatırlatıcıları</Text>
-                  <Text style={styles.settingDescription}>Uyku zamanı hatırlatmaları</Text>
-                </View>
-              </View>
-              <Switch
-                value={sleepReminders}
-                onValueChange={setSleepReminders}
-                trackColor={{ false: '#333', true: '#4a90e2' }}
-                thumbColor={sleepReminders ? '#fff' : '#f4f3f4'}
-              />
-            </View>
-          </View>
+          {renderSettingSection('Bildirimler', [
+            {
+              icon: 'notifications-outline',
+              label: 'Bildirimleri Etkinleştir',
+              value: notifications,
+              onToggle: setNotifications,
+            },
+            {
+              icon: 'alarm-outline',
+              label: 'Hatırlatıcılar',
+              rightIcon: 'chevron-forward',
+              onPress: () => Alert.alert('Bilgi', 'Bu özellik yakında gelecek'),
+            },
+          ])}
 
-          {/* Uygulama Ayarları */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Uygulama</Text>
-            
-            <View style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <Ionicons name="moon-outline" size={24} color="#4a90e2" />
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Karanlık Mod</Text>
-                  <Text style={styles.settingDescription}>Karanlık temayı aç/kapat</Text>
-                </View>
-              </View>
-              <Switch
-                value={darkMode}
-                onValueChange={setDarkMode}
-                trackColor={{ false: '#333', true: '#4a90e2' }}
-                thumbColor={darkMode ? '#fff' : '#f4f3f4'}
-              />
-            </View>
+          {renderSettingSection('Sağlık', [
+            {
+              icon: 'fitness-outline',
+              label: 'Sağlık Verilerini Senkronize Et',
+              value: healthSyncEnabled,
+              onToggle: setHealthSyncEnabled,
+            },
+            {
+              icon: 'refresh-outline',
+              label: 'Veri Senkronizasyon Aralığı',
+              rightIcon: 'chevron-forward',
+              onPress: () => Alert.alert('Bilgi', 'Bu özellik yakında gelecek'),
+            },
+            {
+              icon: 'analytics-outline',
+              label: 'Sağlık Hedeflerim',
+              rightIcon: 'chevron-forward',
+              onPress: () => Alert.alert('Bilgi', 'Bu özellik yakında gelecek'),
+            },
+          ])}
 
-            <View style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <Ionicons name="sync-outline" size={24} color="#4a90e2" />
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Veri Senkronizasyonu</Text>
-                  <Text style={styles.settingDescription}>Otomatik veri senkronizasyonu</Text>
-                </View>
-              </View>
-              <Switch
-                value={dataSync}
-                onValueChange={setDataSync}
-                trackColor={{ false: '#333', true: '#4a90e2' }}
-                thumbColor={dataSync ? '#fff' : '#f4f3f4'}
-              />
-            </View>
-          </View>
+          {renderSettingSection('Veri ve Gizlilik', [
+            {
+              icon: 'cloud-upload-outline',
+              label: 'Otomatik Yedekleme',
+              value: autoBackupEnabled,
+              onToggle: setAutoBackupEnabled,
+            },
+            {
+              icon: 'download-outline',
+              label: 'Verilerimi İndir',
+              rightIcon: 'chevron-forward',
+              onPress: () => Alert.alert('Bilgi', 'Bu özellik yakında gelecek'),
+            },
+            {
+              icon: 'trash-outline',
+              label: 'Tüm Verilerimi Sil',
+              rightIcon: 'chevron-forward',
+              description: 'Dikkat: Bu işlem geri alınamaz!',
+              onPress: () => Alert.alert(
+                'Uyarı', 
+                'Tüm verilerinizi silmek istediğinizden emin misiniz? Bu işlem geri alınamaz!',
+                [
+                  { text: 'Vazgeç', style: 'cancel' },
+                  { text: 'Sil', style: 'destructive', onPress: () => Alert.alert('Bilgi', 'Bu özellik henüz aktif değil') }
+                ]
+              ),
+            },
+          ])}
 
-          {/* Diğer Ayarlar */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Diğer</Text>
-            
-            <TouchableOpacity style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <Ionicons name="language-outline" size={24} color="#4a90e2" />
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Dil</Text>
-                  <Text style={styles.settingDescription}>Türkçe</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color="#666" />
-            </TouchableOpacity>
+          {renderSettingSection('Hesap', [
+            {
+              icon: 'person-outline',
+              label: 'Profil Bilgilerim',
+              rightIcon: 'chevron-forward',
+              onPress: () => Alert.alert('Bilgi', 'Bu özellik yakında gelecek'),
+            },
+            {
+              icon: 'key-outline',
+              label: 'Şifremi Değiştir',
+              rightIcon: 'chevron-forward',
+              onPress: () => Alert.alert('Bilgi', 'Bu özellik yakında gelecek'),
+            },
+            {
+              icon: 'log-out-outline',
+              label: 'Çıkış Yap',
+              rightIcon: 'chevron-forward',
+              onPress: handleSignOut,
+            },
+          ])}
 
-            <TouchableOpacity style={styles.settingItem}>
-              <View style={styles.settingLeft}>
-                <Ionicons name="information-circle-outline" size={24} color="#4a90e2" />
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingTitle}>Hakkında</Text>
-                  <Text style={styles.settingDescription}>Versiyon 1.0.0</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color="#666" />
-            </TouchableOpacity>
+          <View style={styles.version}>
+            <Text style={styles.versionText}>Biorest Mobil v1.0.0</Text>
           </View>
         </ScrollView>
       </View>
@@ -158,6 +252,9 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  backButton: {
+    padding: 8,
   },
   content: {
     flex: 1,
@@ -189,11 +286,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  settingInfo: {
-    marginLeft: 15,
-    flex: 1,
+  settingIcon: {
+    marginRight: 15,
   },
-  settingTitle: {
+  settingLabel: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '500',
@@ -202,6 +298,18 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 14,
     marginTop: 2,
+  },
+  settingRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  version: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  versionText: {
+    color: '#666',
+    fontSize: 12,
   },
 });
 

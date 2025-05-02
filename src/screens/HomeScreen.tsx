@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions, Modal, TextInput, Alert, SafeAreaView, StatusBar, Platform, Animated } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ScrollView, Dimensions, Modal, TextInput, Alert, SafeAreaView, StatusBar, Platform, Animated, Easing } from 'react-native';
 import { LinearGradient } from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { LineChart } from 'react-native-chart-kit';
-import { useNavigation, CommonActions } from '@react-navigation/native';
+import { useNavigation, CommonActions, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { RootStackParamList, MainTabParamList, SleepNotification } from '../navigation/types';
 import { AnimatedCircularProgress } from 'react-native-circular-progress';
 import { SafeAreaView as SafeAreaViewContext } from 'react-native-safe-area-context';
 import HealthConnectService from '../services/HealthConnectService';
+import { styles } from '../styles/HomeScreenStyles';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
@@ -22,6 +23,44 @@ const HomeScreen = () => {
   const [showZzzInfoModal, setShowZzzInfoModal] = useState(false);
   const [healthData, setHealthData] = useState<any>(null);
   const [calculatingScore, setCalculatingScore] = useState(false);
+  
+  // Animasyon değerleri
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  
+  // Sayfa odaklandığında animasyonları başlat
+  useFocusEffect(
+    React.useCallback(() => {
+      // Paralel animasyonlar
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 600,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        })
+      ]).start();
+      
+      return () => {
+        // Sayfa odağını kaybettiğinde animasyonları sıfırla
+        fadeAnim.setValue(0);
+        slideAnim.setValue(50);
+        scaleAnim.setValue(0.9);
+      };
+    }, [])
+  );
   
   // Örnek bildirim verisi (daha sonra veritabanından gelecek)
   const [lastNightData] = useState<SleepNotification>({
@@ -39,15 +78,18 @@ const HomeScreen = () => {
     }
   });
 
-  const screenWidth = Dimensions.get('window').width;
+  const { width: screenWidth } = Dimensions.get('window');
 
   const chartConfig = {
     backgroundGradientFrom: '#1a1a1a',
     backgroundGradientTo: '#1a1a1a',
     color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
-    strokeWidth: 2,
+    strokeWidth: Platform.select({ ios: 2, android: 1.5 }),
     barPercentage: 0.5,
-    useShadowColorFromDataset: false
+    useShadowColorFromDataset: false,
+    propsForLabels: {
+      fontSize: Platform.select({ ios: 12, android: 10 }),
+    },
   };
 
   const navigateToTab = (routeName: keyof MainTabParamList) => {
@@ -78,7 +120,7 @@ const HomeScreen = () => {
             name={i <= sleepRating ? 'star' : 'star-outline'}
             size={40}
             color="#FFD700"
-            style={styles.star}
+            style={{ marginHorizontal: 5 }}
           />
         </TouchableOpacity>
       );
@@ -106,170 +148,198 @@ const HomeScreen = () => {
   return (
     <SafeAreaViewContext style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Hoş Geldiniz</Text>
-        </View>
-
-        {/* Google Fit Bağlantı Kartı */}
-        <TouchableOpacity 
-          style={styles.googleFitCard}
-          onPress={() => navigation.navigate('HealthData')}
+      <ScrollView 
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <Animated.View 
+          style={[
+            styles.header,
+            {
+              opacity: fadeAnim,
+              transform: [{translateY: slideAnim}]
+            }
+          ]}
         >
-          <LinearGradient
-            colors={['#4CAF50', '#2E7D32']}
-            style={styles.googleFitGradient}
+          <Text style={styles.headerTitle}>Hoş Geldiniz</Text>
+        </Animated.View>
+
+        {/* Sağlık Verileri Kartı */}
+        <Animated.View
+          style={{
+            opacity: fadeAnim,
+            transform: [{translateY: Animated.multiply(slideAnim, 1.2)}, {scale: scaleAnim}]
+          }}
+        >
+          <TouchableOpacity 
+            style={styles.googleFitCard}
+            onPress={() => navigation.navigate('HealthData')}
+            activeOpacity={0.9}
           >
-            <View style={styles.googleFitHeader}>
-              <Ionicons name="heart" size={24} color="#fff" />
-              <Text style={styles.googleFitTitle}>Sağlık Verilerinizi Bağlayın</Text>
-            </View>
-            <Text style={styles.googleFitText}>
-              Uyku kalitenizi iyileştirmek için Google Fit üzerinden sağlık verilerinizi bağlayın.
-            </Text>
-            <View style={styles.googleFitButton}>
-              <Text style={styles.googleFitButtonText}>Sağlık Verilerini Görüntüle</Text>
-              <Ionicons name="arrow-forward" size={20} color="#fff" />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+            <LinearGradient
+              colors={['#43A047', '#2E7D32']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.googleFitGradient}
+            >
+              <View style={{flexWrap:"wrap"}}>
+                <View style={styles.googleFitHeader}>
+                  <Ionicons name="heart" size={24} color="#fff" />
+                  <Text style={styles.googleFitTitle} numberOfLines={2} ellipsizeMode="tail">Sağlık Verilerinizi Bağlayın</Text>
+                </View>
+                <Text style={styles.googleFitText} numberOfLines={2} ellipsizeMode="tail">
+                  Uyku kalitenizi iyileştirmek için sağlık verilerinizi bağlayın
+                </Text>
+              </View>
+              <View style={styles.googleFitButton}>
+                <Text style={styles.googleFitButtonText} numberOfLines={1} ellipsizeMode="tail">Sağlık Verilerini Görüntüle</Text>
+                <Ionicons name="arrow-forward" size={16} color="#fff" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
 
         {/* Uyku Bildirimi Kartı */}
-        <TouchableOpacity 
-          style={styles.notificationCard}
-          onPress={() => navigation.navigate('SleepDetails', { sleepData: lastNightData })}
+        <Animated.View
+          style={{
+            opacity: fadeAnim,
+            transform: [{translateY: Animated.multiply(slideAnim, 1.5)}]
+          }}
         >
-          <LinearGradient
-            colors={['#2c3e50', '#3498db']}
-            style={styles.notificationGradient}
+          <TouchableOpacity 
+            style={styles.notificationCard}
+            onPress={() => navigation.navigate('SleepDetails', { sleepData: lastNightData })}
           >
-            <View style={styles.notificationHeader}>
-              <Ionicons name="notifications" size={24} color="#fff" />
-              <Text style={styles.notificationTitle}>Dün Geceki Uykunuz</Text>
-            </View>
-            <View style={styles.notificationContent}>
-              <Text style={styles.notificationText}>Tarih: {lastNightData.date}</Text>
-              <Text style={styles.notificationText}>Işık: {lastNightData.lightLevel}</Text>
-              <Text style={styles.notificationText}>Koku: {lastNightData.fragrance}</Text>
-              <Text style={styles.notificationText}>Ses: {lastNightData.sound}</Text>
-              <Text style={styles.notificationText}>Süre: {lastNightData.duration}</Text>
-            </View>
-            <Text style={styles.notificationFooter}>
-              Detayları görüntülemek ve değerlendirmek için tıklayın
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
+            <LinearGradient
+              colors={['#1e3c72', '#2a5298']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.notificationGradient}
+            >
+              <View>
+                <View style={styles.notificationHeader}>
+                  <Ionicons name="moon" size={28} color="#fff" />
+                  <Text style={styles.notificationTitle} numberOfLines={1} ellipsizeMode="tail">Dün Geceki Uykunuz</Text>
+                </View>
+                <View style={styles.notificationContent}>
+                  <Text style={styles.notificationText} numberOfLines={1} ellipsizeMode="tail">Tarih: {lastNightData.date}</Text>
+                  <Text style={styles.notificationText} numberOfLines={1} ellipsizeMode="tail">Işık: {lastNightData.lightLevel}</Text>
+                  <Text style={styles.notificationText} numberOfLines={1} ellipsizeMode="tail">Koku: {lastNightData.fragrance}</Text>
+                  <Text style={styles.notificationText} numberOfLines={1} ellipsizeMode="tail">Ses: {lastNightData.sound}</Text>
+                  <Text style={styles.notificationText} numberOfLines={1} ellipsizeMode="tail">Süre: {lastNightData.duration}</Text>
+                </View>
+              </View>
+              <Text style={styles.notificationFooter} numberOfLines={1} ellipsizeMode="tail">
+                Detayları görüntülemek için dokunun
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
 
         {/* Z-Score Göstergesi */}
-        <View style={styles.zScoreContainer}>
-          <LinearGradient
-            colors={['#1a2a6c', '#2948ff', '#0066ff']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.zScoreGradient}
-          >
-            <View style={styles.zScoreHeader}>
-              <View style={styles.zScoreTitleContainer}>
-                <Animated.Text 
-                  style={[
-                    styles.zScoreZ,
-                    { transform: [{ scale: 1 }] }
-                  ]}
-                >
-                  Z
-                </Animated.Text>
-                <Animated.Text 
-                  style={[
-                    styles.zScoreZ,
-                    { transform: [{ scale: 0.7 }], marginHorizontal: -5 }
-                  ]}
-                >
-                  z
-                </Animated.Text>
-                <Animated.Text 
-                  style={[
-                    styles.zScoreZ,
-                    { transform: [{ scale: 0.4 }], marginLeft: -5 }
-                  ]}
-                >
-                  Z
-                </Animated.Text>
-                <Text style={styles.zScoreTitle}>-Skoru</Text>
+        <Animated.View
+          style={{
+            opacity: fadeAnim,
+            transform: [{translateY: Animated.multiply(slideAnim, 1.8)}]
+          }}
+        >
+          <View style={styles.zScoreContainer}>
+            <LinearGradient
+              colors={['#283593', '#1a237e']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.zScoreGradient}
+            >
+              <View style={styles.zScoreHeader}>
+                <View style={styles.zScoreTitleContainer}>
+                <View style={styles.zRow}>
+                  <View style={styles.zStack}>
+                  <Text style={[styles.zLetter, { fontSize: 48, left: 0 }]}>Z</Text>
+                  <Text style={[styles.zLetter, { fontSize: 34, left: 28 }]}>z</Text>
+                  <Text style={[styles.zLetter, { fontSize: 22, left: 45 }]}>z</Text>
+                </View>
+                <Text style={styles.zScoreTitle} numberOfLines={1} ellipsizeMode="tail">Skoru</Text>
+                </View>
+                </View>
+                <TouchableOpacity onPress={() => setShowZzzInfoModal(true)}>
+                  <Ionicons name="information-circle-outline" size={24} color="#fff" />
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={() => setShowZzzInfoModal(true)}>
-                <Ionicons name="information-circle-outline" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.zScoreContent}>
-              <AnimatedCircularProgress
-                size={150}
-                width={12}
-                fill={zScore}
-                tintColor={getZScoreColor(zScore)}
-                backgroundColor="rgba(255,255,255,0.2)"
-                rotation={0}
-                lineCap="round"
-              >
-                {(fill: number) => (
-                  <View style={styles.zScoreTextContainer}>
-                    <Text style={styles.zScoreValue}>{Math.round(fill)}</Text>
-                    <Text style={styles.zScoreLabel}>Z-Skor</Text>
-                  </View>
-                )}
-              </AnimatedCircularProgress>
               
-              <View style={styles.zScoreDetails}>
-                <Text style={styles.zScoreMessage}>
-                  {getZScoreMessage(zScore)}
-                </Text>
-                <Text style={styles.zScoreDescription}>
-                  Uyku kaliteniz ortalamanın üzerinde. Böyle devam edin!
-                </Text>
+              <View style={styles.zScoreContent}>
+                <AnimatedCircularProgress
+                  size={150}
+                  width={12}
+                  fill={zScore}
+                  tintColor={getZScoreColor(zScore)}
+                  backgroundColor="rgba(255,255,255,0.2)"
+                  rotation={0}
+                  lineCap="round"
+                >
+                  {(fill: number) => (
+                    <View style={styles.zScoreTextContainer}>
+                      <Text style={styles.zScoreValue}>{Math.round(fill)}</Text>
+                      <Text style={styles.zScoreLabel} numberOfLines={1} ellipsizeMode="tail">Z-Skor</Text>
+                    </View>
+                  )}
+                </AnimatedCircularProgress>
+                
+                <View style={styles.zScoreDetails}>
+                  <Text style={styles.zScoreMessage} numberOfLines={1} ellipsizeMode="tail">
+                    {getZScoreMessage(zScore)}
+                  </Text>
+                  <Text style={styles.zScoreDescription} numberOfLines={2} ellipsizeMode="tail">
+                    Uyku kaliteniz ortalamanın üzerinde. Böyle devam edin!
+                  </Text>
+                </View>
               </View>
-            </View>
 
-            <View style={styles.zScoreStats}>
-              <View style={styles.zScoreStat}>
-                <Text style={styles.zScoreStatLabel}>REM</Text>
-                <Text style={styles.zScoreStatValue}>25%</Text>
+              <View style={styles.zScoreStats}>
+                <View style={styles.zScoreStat}>
+                  <Text style={styles.zScoreStatLabel} numberOfLines={1} ellipsizeMode="tail">REM</Text>
+                  <Text style={styles.zScoreStatValue}>25%</Text>
+                </View>
+                <View style={styles.zScoreStat}>
+                  <Text style={styles.zScoreStatLabel} numberOfLines={1} ellipsizeMode="tail">Derin Uyku</Text>
+                  <Text style={styles.zScoreStatValue}>35%</Text>
+                </View>
+                <View style={styles.zScoreStat}>
+                  <Text style={styles.zScoreStatLabel} numberOfLines={1} ellipsizeMode="tail">Hafif Uyku</Text>
+                  <Text style={styles.zScoreStatValue}>40%</Text>
+                </View>
               </View>
-              <View style={styles.zScoreStat}>
-                <Text style={styles.zScoreStatLabel}>Derin Uyku</Text>
-                <Text style={styles.zScoreStatValue}>35%</Text>
-              </View>
-              <View style={styles.zScoreStat}>
-                <Text style={styles.zScoreStatLabel}>Hafif Uyku</Text>
-                <Text style={styles.zScoreStatValue}>40%</Text>
-              </View>
-            </View>
-          </LinearGradient>
-        </View>
+            </LinearGradient>
+          </View>
+        </Animated.View>
 
         {/* Günlük Özet */}
         <View style={styles.summarySection}>
-          <Text style={styles.sectionTitle}>Günlük Özet</Text>
+          <Text style={styles.sectionTitle} numberOfLines={1} ellipsizeMode="tail">Günlük Özet</Text>
           <View style={styles.summaryGrid}>
             <View style={styles.summaryCard}>
               <Ionicons name="moon" size={24} color="#4a90e2" />
               <Text style={styles.summaryValue}>7.5</Text>
-              <Text style={styles.summaryLabel}>Uyku Süresi</Text>
-              <Text style={styles.summaryUnit}>saat</Text>
+              <Text style={styles.summaryLabel} numberOfLines={1} ellipsizeMode="tail">Uyku Süresi</Text>
+              <Text style={styles.summaryUnit} numberOfLines={1} ellipsizeMode="tail">saat</Text>
             </View>
             <View style={styles.summaryCard}>
               <Ionicons name="heart" size={24} color="#e74c3c" />
               <Text style={styles.summaryValue}>68</Text>
-              <Text style={styles.summaryLabel}>Ort. Nabız</Text>
-              <Text style={styles.summaryUnit}>BPM</Text>
+              <Text style={styles.summaryLabel} numberOfLines={1} ellipsizeMode="tail">Ort. Nabız</Text>
+              <Text style={styles.summaryUnit} numberOfLines={1} ellipsizeMode="tail">BPM</Text>
             </View>
             <View style={styles.summaryCard}>
               <Ionicons name="bed" size={24} color="#2ecc71" />
               <Text style={styles.summaryValue}>92%</Text>
-              <Text style={styles.summaryLabel}>Verimlilik</Text>
-              <Text style={styles.summaryUnit}>oran</Text>
+              <Text style={styles.summaryLabel} numberOfLines={1} ellipsizeMode="tail">Verimlilik</Text>
+              <Text style={styles.summaryUnit} numberOfLines={1} ellipsizeMode="tail">oran</Text>
             </View>
           </View>
         </View>
+
+      
       </ScrollView>
 
       {/* Değerlendirme Modalı */}
@@ -319,10 +389,15 @@ const HomeScreen = () => {
                       }]
                     }}
                     width={screenWidth - 80}
-                    height={220}
+                    height={Platform.OS === 'ios' ? 220 : 200}
                     chartConfig={chartConfig}
                     bezier
                     style={styles.chart}
+                    withInnerLines={Platform.OS === 'ios'}
+                    withOuterLines={true}
+                    withVerticalLabels={true}
+                    withHorizontalLabels={true}
+                    fromZero={true}
                   />
 
                   <View style={styles.eventsContainer}>
@@ -485,459 +560,5 @@ const HomeScreen = () => {
     </SafeAreaViewContext>
   );
 };
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#121212',
-  },
-  container: {
-    flex: 1,
-  },
-  contentContainer: {
-    paddingBottom: Platform.select({ ios: 90, android: 70 }),
-  },
-  header: {
-    padding: 20,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  zScoreContainer: {
-    margin: 20,
-    borderRadius: 20,
-    overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  zScoreGradient: {
-    padding: 20,
-  },
-  zScoreHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  zScoreTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  zScoreZ: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  zScoreTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginLeft: 2,
-  },
-  zScoreContent: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  zScoreTextContainer: {
-    alignItems: 'center',
-  },
-  zScoreValue: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  zScoreLabel: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 5,
-  },
-  zScoreDetails: {
-    alignItems: 'center',
-    marginTop: 15,
-  },
-  zScoreMessage: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 8,
-  },
-  zScoreDescription: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
-  zScoreStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 15,
-    padding: 15,
-    marginTop: 20,
-  },
-  zScoreStat: {
-    alignItems: 'center',
-  },
-  zScoreStatLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 4,
-  },
-  zScoreStatValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 15,
-  },
-  summarySection: {
-    padding: 20,
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  summaryCard: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 15,
-    padding: 15,
-    width: '31%',
-    alignItems: 'center',
-  },
-  summaryValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginVertical: 10,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#888',
-    textAlign: 'center',
-  },
-  summaryUnit: {
-    fontSize: 10,
-    color: '#666',
-    marginTop: 2,
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    width: '90%',
-    maxHeight: '90%',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 20,
-    padding: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalScroll: {
-    flex: 1,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    marginBottom: 20,
-    borderRadius: 10,
-    backgroundColor: '#333',
-    padding: 4,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  activeTab: {
-    backgroundColor: '#4a90e2',
-  },
-  tabText: {
-    color: '#888',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  activeTabText: {
-    color: '#fff',
-  },
-  detailsContainer: {
-    flex: 1,
-  },
-  chartTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    textAlign: 'center',
-  },
-  chart: {
-    marginVertical: 8,
-    borderRadius: 16,
-  },
-  eventsContainer: {
-    marginTop: 20,
-    padding: 15,
-    backgroundColor: '#222',
-    borderRadius: 12,
-  },
-  eventsTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-  },
-  eventItem: {
-    marginBottom: 15,
-    padding: 12,
-    backgroundColor: '#333',
-    borderRadius: 8,
-  },
-  eventHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  eventTime: {
-    color: '#4a90e2',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginLeft: 8,
-  },
-  eventAction: {
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  eventEffect: {
-    color: '#888',
-    fontSize: 14,
-    fontStyle: 'italic',
-  },
-  summaryContainer: {
-    marginTop: 20,
-    padding: 15,
-    backgroundColor: '#222',
-    borderRadius: 12,
-  },
-  summaryTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-  },
-  summaryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  ratingContainer: {
-    padding: 20,
-  },
-  ratingTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  starsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  star: {
-    marginHorizontal: 5,
-  },
-  commentInput: {
-    width: '100%',
-    height: 100,
-    backgroundColor: '#333',
-    borderRadius: 10,
-    padding: 15,
-    color: '#fff',
-    textAlignVertical: 'top',
-    marginBottom: 20,
-  },
-  submitButton: {
-    backgroundColor: '#4CAF50',
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    color: '#fff',
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  notificationCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 15,
-    overflow: 'hidden',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  notificationGradient: {
-    padding: 20,
-  },
-  notificationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  notificationTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginLeft: 10,
-  },
-  notificationContent: {
-    marginBottom: 15,
-  },
-  notificationText: {
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 5,
-  },
-  notificationFooter: {
-    color: '#fff',
-    fontSize: 14,
-    textAlign: 'center',
-    opacity: 0.8,
-  },
-  googleFitCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 15,
-    overflow: 'hidden',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  googleFitGradient: {
-    padding: 20,
-    borderRadius: 15,
-  },
-  googleFitHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  googleFitTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginLeft: 10,
-  },
-  googleFitText: {
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 15,
-  },
-  googleFitButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-  },
-  googleFitButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    marginRight: 5,
-  },
-  infoSection: {
-    marginBottom: 20,
-  },
-  infoHeader: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 10,
-  },
-  infoText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    lineHeight: 20,
-    marginBottom: 10,
-  },
-  bulletList: {
-    marginVertical: 10,
-  },
-  bulletItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  bullet: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#4a90e2',
-    marginRight: 10,
-  },
-  bulletText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.9)',
-    flex: 1,
-  },
-  scoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  scoreIndicator: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    marginRight: 10,
-  },
-  scoreText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.9)',
-  },
-  closeButton: {
-    backgroundColor: '#4a90e2',
-    borderRadius: 8,
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  closeButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-});
 
 export default HomeScreen;

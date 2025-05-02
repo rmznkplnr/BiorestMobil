@@ -1,699 +1,185 @@
 import { NativeModules, Platform } from 'react-native';
 import { Alert, Linking } from 'react-native';
 import HealthConnect, { Permission } from 'react-native-health-connect';
-
-console.log('[HealthConnect Servis] Modül durumu kontrol ediliyor...');
-console.log('[HealthConnect Servis] NativeModules.HealthConnect:', NativeModules?.HealthConnect ? 'Mevcut' : 'Mevcut değil');
-console.log('[HealthConnect Servis] İmport edilen HealthConnect:', HealthConnect ? 'Mevcut' : 'Mevcut değil');
-
-// Uyku aşamalarının doğru eşlenmesi için yardımcı fonksiyon
-const mapSleepStage = (stageValue: number | string): string => {
-  // Xiaomi uyku aşamaları için özel eşleme
-  if (stageValue === 4 || stageValue === 'AWAKE' || stageValue === '4') return 'awake';
-  if (stageValue === 2 || stageValue === 'LIGHT' || stageValue === '2') return 'light';
-  if (stageValue === 1 || stageValue === 'DEEP' || stageValue === '1') return 'deep';
-  if (stageValue === 3 || stageValue === 'REM' || stageValue === '3') return 'rem';
+import { mapHealthConnectData } from '../types/health';
+import type { HealthData as HealthDataType, SleepMetric, SleepStage } from '../types/health';
+import { format } from 'date-fns';
 
 
-  
-  // Farklı cihazlar için diğer yaygın formatlar
-  if (typeof stageValue === 'string') {
-    const stageLower = stageValue.toLowerCase();
-    if (stageLower.includes('deep')) return 'deep';
-    if (stageLower.includes('light')) return 'light';
-    if (stageLower.includes('rem')) return 'rem';
-    if (stageLower.includes('awake') || stageLower.includes('wake')) return 'awake';
-  }
-  
-  console.warn('Bilinmeyen uyku aşaması:', stageValue);
-  return 'light'; // Bilinmeyeni hafif uykuya varsayılan olarak eşle
-};
 
-export interface HealthData {
-  steps: number;
-  heartRate: {
-    average: number;
-    max: number;
-    min: number;
-    values: number[];
-    times: string[];
-  };
-  sleep: {
-    efficiency: number;
-    duration: number;
-    deep: number;
-    light: number;
-    rem: number;
-    awake: number;
-    startTime: string;
-    endTime: string;
-  };
-  calories: number;
-  oxygen: {
-    average: number;
-    values: number[];
-    times: string[];
-  };
-  sleepStressTimeline?: {
-    time: string;
-    sleepStage?: string;
-    stressValue?: number;
-    stressCategory?: string;
-  }[];
-}
+// HealthConnectImpl değişkenini tanımla
+let HealthConnectImpl: any;
 
-// HealthConnect API'sinde kullanılacak izinleri tanımla
-// Health Connect'in beklediği doğru izin formatı ve manifestteki izinlerle eşleşmelidir
-const PERMISSIONS = [
-  'read_steps',
-  'read_heart_rate',  // Nabız verisi için kritik izin
-  'read_sleep',
-  // 'read_distance',
-  'read_total_calories_burned',
-  'read_weight',
-  'read_blood_glucose', 
-  'read_blood_pressure',
-  'read_oxygen_saturation',
-  'read_body_temperature',
-  'read_sleep_session',  // Uyku verileri için
-  'read_sleep_stage',    // Uyku aşamaları için yeni izin
-  'read_heart_rate_variability', // HRV (stres hesaplaması için)
-  'read_resting_heart_rate',     // Dinlenme nabzı
-  'read_active_calories_burned', // Aktif kalori
-  'read_exercise',              // Egzersiz verileri
-  'read_basal_metabolic_rate',  // Bazal metabolizma
-  'read_steps_cadence'          // Adım kadansı için
-] as unknown as Permission[];
-
-// Özel olarak uyku verisi için izin kontrolü
-const SLEEP_PERMISSIONS = [
-  'read_sleep',
-  'read_sleep_session',
-  'read_sleep_stage'
-] as unknown as Permission[];
-
-// Stres hesaplaması için kalp atış hızı değişkenliği (HRV) izinleri
-const STRESS_PERMISSIONS = [
-  'read_heart_rate',
-  'read_heart_rate_variability'
-] as unknown as Permission[];
-
-// Özel olarak nabız verisi için izin kontrolü
-const HEARTRATE_PERMISSION = ['read_heart_rate'] as unknown as Permission[];
-
-// AndroidManifest.xml'de tanımlanan izinler - dikkatli karşılaştırın
-const MANIFEST_PERMISSIONS = [
-  'health.READ_HEART_RATE',
-  'health.WRITE_HEART_RATE',
-  'health.READ_STEPS',
-  'health.WRITE_STEPS'
-];
-
-// Health Connect uygulaması paket adı
-const HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata";
-
-// Native modülün varlığını kontrol et
-const isHealthConnectNativeModuleAvailable = (): boolean => {
-  try {
-    // NativeModules.HealthConnect var mı kontrol et
-    return NativeModules.HealthConnect !== undefined && NativeModules.HealthConnect !== null;
-  } catch (error) {
-    console.error('HealthConnect native modül kontrolü hatası:', error);
-    return false;
-  }
-};
-
-// HealthConnect modülünün varlığını kontrol et
-const isHealthConnectAvailable = (): boolean => {
-  try {
-    return HealthConnect !== undefined && HealthConnect !== null;
-  } catch (error) {
-    console.error('HealthConnect modülü kontrol hatası:', error);
-    return false;
-  }
-};
-
-// Native modül mevcut değilse, sahte veri üreten bir nesne oluştur
-interface MinimalHealthConnectInterface {
-  getSdkStatus: (packageName?: string) => Promise<any>;
-  getGrantedPermissions: () => Promise<any>;
-  requestPermission: (permissions: any) => Promise<any>;
-  openHealthConnectSettings: () => Promise<void>;
-  readRecords: (recordType: string, options?: any) => Promise<any>;
-  initialize?: (packageName?: string) => Promise<void>;
-}
-
-// Sahte implementasyon oluştur ve daha zengin test verileri ekle
-const FakeHealthConnect: MinimalHealthConnectInterface = {
-  getSdkStatus: (packageName?: string) => {
-    console.log('Sahte getSdkStatus çağrıldı:', packageName);
-    return Promise.resolve(true);
-  },
-  getGrantedPermissions: () => {
-    console.log('Sahte getGrantedPermissions çağrıldı');
-    return Promise.resolve(['read_steps', 'read_heart_rate']);
-  },
-  requestPermission: () => {
-    console.log('Sahte requestPermission çağrıldı');
-    return Promise.resolve(true);
-  },
-  openHealthConnectSettings: () => {
-    console.log('Sahte openHealthConnectSettings çağrıldı');
-    Alert.alert(
-      'Health Connect Emülatörü',
-      'Bu bir test cihazı veya Health Connect doğru yüklenmemiş. API emüle ediliyor.',
-      [{ text: 'Tamam' }]
-    );
-    return Promise.resolve();
-  },
-  readRecords: (recordType: string, options?: any) => {
-    console.log('Sahte readRecords çağrıldı:', recordType, options);
-    // Adım verisi test değerleri
-    if (recordType === 'Steps') {
-      return Promise.resolve([{ count: 7500, startTime: new Date().toISOString(), endTime: new Date().toISOString() }]);
-    }
-    
-    // Nabız verisi test değerleri
-    if (recordType === 'HeartRate') {
-      const now = new Date();
-      const samples = [];
-      // Son 24 saat için sahte nabız verileri oluştur
-      for (let i = 0; i < 24; i++) {
-        const time = new Date(now.getTime() - (i * 60 * 60 * 1000)); // her saat için
-        samples.push({ 
-          beatsPerMinute: Math.floor(65 + Math.random() * 20), // 65-85 arası nabız 
-          time: time.toISOString()
-        });
-      }
-      
-      return Promise.resolve([{ 
-        samples: samples
-      }]);
-    }
-    
-    // Oksijen satürasyonu test değerleri
-    if (recordType === 'OxygenSaturation') {
-      const now = new Date();
-      const samples = [];
-      // Son 24 saat için sahte SpO2 verileri oluştur
-      for (let i = 0; i < 24; i++) {
-        const time = new Date(now.getTime() - (i * 60 * 60 * 1000));
-        samples.push({ 
-          percentage: 95 + Math.floor(Math.random() * 5), // 95-99 arası SpO2
-          time: time.toISOString()
-        });
-      }
-      
-      return Promise.resolve([{ 
-        samples: samples
-      }]);
-    }
-    
-    // Stres seviyesi verileri
-    if (recordType === 'StressLevel') {
-      const now = new Date();
-      const samples = [];
-      // Son 24 saat için sahte stres verileri oluştur
-      for (let i = 0; i < 24; i++) {
-        const time = new Date(now.getTime() - (i * 60 * 60 * 1000));
-        samples.push({ 
-          level: 20 + Math.floor(Math.random() * 60), // 20-80 arası stres seviyesi
-          time: time.toISOString()
-        });
-      }
-      
-      return Promise.resolve([{ 
-        samples: samples
-      }]);
-    }
-    
-    // Uyku verisi test değerleri
-    if (recordType === 'SleepSession') {
-      const now = new Date();
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      yesterday.setHours(23, 0, 0, 0);
-      
-      const todayMorning = new Date(now);
-      todayMorning.setHours(7, 30, 0, 0);
-      
-      return Promise.resolve([{
-        startTime: yesterday.toISOString(),
-        endTime: todayMorning.toISOString(),
-        stages: [
-          { stage: 'deep', startTime: yesterday.toISOString(), endTime: new Date(yesterday.getTime() + 2*60*60*1000).toISOString() },
-          { stage: 'rem', startTime: new Date(yesterday.getTime() + 2*60*60*1000).toISOString(), endTime: new Date(yesterday.getTime() + 3*60*60*1000).toISOString() },
-          { stage: 'light', startTime: new Date(yesterday.getTime() + 3*60*60*1000).toISOString(), endTime: todayMorning.toISOString() },
-        ]
-      }]);
-    }
-    
-    return Promise.resolve([]);
-  },
-  initialize: (packageName?: string) => {
-    console.log('Sahte initialize çağrıldı:', packageName);
-    return Promise.resolve();
-  }
-};
-
-// Gerçek HealthConnect native modülünü kontrol et
-let HealthConnectImpl: MinimalHealthConnectInterface;
-
-// NativeModules.HealthConnect kontrolü
+// HealthConnect modülü yönetimi
 try {
-  if (NativeModules?.HealthConnect) {
-    console.log('✅ NativeModules.HealthConnect bulundu, doğrudan kullanılıyor');
-    HealthConnectImpl = NativeModules.HealthConnect as unknown as MinimalHealthConnectInterface;
-  } else if (HealthConnect) {
+  // Önce react-native-health-connect'i dene
+  if (HealthConnect) {
     console.log('✅ react-native-health-connect modülü bulundu, kullanılıyor');
-    HealthConnectImpl = HealthConnect as unknown as MinimalHealthConnectInterface;
-  } else {
+    HealthConnectImpl = HealthConnect;
+  } 
+  // Alternatif olarak NativeModules.HealthConnect'i dene
+  else if (NativeModules?.HealthConnect) {
+    console.log('✅ NativeModules.HealthConnect bulundu, doğrudan kullanılıyor');
+    HealthConnectImpl = NativeModules.HealthConnect;
+  }  else {
     console.log('⚠️ Uyarı: Health Connect modülü bulunamadı, sahte implementasyon kullanılıyor.');
-    HealthConnectImpl = FakeHealthConnect;
-  }
-  
-  // Metod varlığı kontrolü
-  if (typeof HealthConnectImpl?.readRecords !== 'function') {
-    console.log('⚠️ readRecords metodu bulunamadı, sahte implementasyona dönülüyor');
-    HealthConnectImpl = FakeHealthConnect;
+    HealthConnectImpl = {
+      readRecords: async () => null,
+      getGrantedPermissions: async () => [],
+      requestPermission: async () => true,
+      openHealthConnectSettings: async () => {},
+      initialize: async () => {}
+    };
   }
 } catch (error) {
-  console.log('⚠️ Health Connect modül erişim hatası, sahte implementasyon kullanılıyor:', error);
-  HealthConnectImpl = FakeHealthConnect;
+  console.log('Health Connect modül erişim hatası, sahte implementasyon kullanılıyor:', error);
+  HealthConnectImpl = {
+    readRecords: async () => null,
+    getGrantedPermissions: async () => [],
+    requestPermission: async () => true,
+    openHealthConnectSettings: async () => {},
+    initialize: async () => {}
+  };
 }
 
-// Debug için modül yapısını logla
-console.log('[HealthConnect Servis] HealthConnectImpl yapısı:',
-  `getSdkStatus: ${typeof HealthConnectImpl?.getSdkStatus === 'function' ? 'function' : 'undefined'}`,
-  `readRecords: ${typeof HealthConnectImpl?.readRecords === 'function' ? 'function' : 'undefined'}`
-);
+interface HealthRecord {
+  count?: number;
+  steps?: number;
+  value?: number;
+  energy?: number;
+  calories?: number;
+  rate?: number;
+  startTime?: string;  // Ekleyin
+  endTime?: string;    // Ekleyin
+  stages?: Array<{     // Ekleyin
+    stage?: number | string;
+    startTime?: string;
+    endTime?: string;
+  }>;
+  samples?: Array<{
+    beatsPerMinute?: number;
+    percentage?: number;
+    time?: string;
+    value?: {
+      stage?: number | string;
+    };
+    metadata?: {
+      startTime?: string;
+      endTime?: string;
+    };
+  }>;
+  time?: string;
+  percentage?: number;
+  metadata?: {
+    startTime?: string;
+    endTime?: string;
+  };
+}
 
 class HealthConnectService {
   static isInitialized: boolean = false;
-  // İzin durumunu hatırlamak için statik değişken ekliyoruz
   static permissionsGranted: boolean = false;
-  // Hangi izinlerin verildiğini depolamak için bir dizi
   static grantedPermissionList: string[] = [];
 
-  /**
-   * Health Connect müşterisini başlatır
-   */
-  static async initialize(): Promise<boolean> {
-    if (Platform.OS !== 'android') {
-      console.log('Health Connect sadece Android platformunda desteklenir');
-      return false;
-    }
+  // Daha az log yazacak şekilde değişken
+  static DEBUG_LOGS = false;
+  static permissionRequested = false; // İzinlerin sadece bir kez istenmesi için kontrol değişkeni
 
-    try {
-      // Eğer zaten başlatılmışsa tekrar başlatmaya gerek yok
-      if (this.isInitialized === true) {
-        console.log('Health Connect zaten başlatılmış');
-        return true;
-      }
-      
-      // Önce yüklü olup olmadığını kontrol et
-      const installed = await this.isInstalled();
-      if (!installed) {
-        console.log('Health Connect yüklü değil');
-        return false;
-      }
-      
-      // Health Connect client'ını başlat (API dokümanından)
-      try {
-        if (HealthConnectImpl.initialize) {
-          await HealthConnectImpl.initialize(HEALTH_CONNECT_PACKAGE);
-          console.log('Health Connect client başarıyla başlatıldı');
-        } else {
-          console.log('Health Connect initialize fonksiyonu bulunamadı, buna rağmen devam ediliyor');
-        }
-      } catch (initError) {
-        console.warn('Health Connect başlatma hatası (ama devam ediyoruz):', initError);
-        // Başlatma hatası olsa bile devam et - bazı cihazlarda initialize gerekmeyebilir
-      }
-      
-      // İstemciyi başlattıktan sonra izinleri kontrol et
-      try {
-        console.log('Health Connect uygulaması yüklü, izinler kontrol ediliyor...');
-        
-        // İzinleri kontrol et
-        const permissionsAlreadyGranted = await this.checkPermissionsAlreadyGranted();
-        console.log('Zaten verilen izinler kontrol edildi:', permissionsAlreadyGranted);
-        
-        // Zaten gerekli tüm izinler verilmişse, işimiz bitti
-        if (permissionsAlreadyGranted) {
-          console.log('Zaten tüm gerekli izinler verilmiş, tekrar istemeyeceğiz');
-          this.permissionsGranted = true;
-        }
-      } catch (permError) {
-        console.warn('İzin kontrolü hatası (ama devam ediyoruz):', permError);
-      }
-      
-      // İstemci başlatıldı olarak işaretliyoruz
-      this.isInitialized = true;
-      return true;
-      
-    } catch (error) {
-      console.error('Health Connect başlatma hatası:', error);
-      return false;
+  static log(message: string, ...args: any[]) {
+    if (this.DEBUG_LOGS) {
+      console.log(message, ...args);
     }
   }
 
-  /**
-   * Health Connect'in yüklü olup olmadığını çeşitli yöntemlerle kontrol eder
-   * Özellikle Android 10 gibi eski Android sürümleri için geliştirilmiş bir metod
-   */
-  static async isInstalledOnDevice(): Promise<boolean> {
-    try {
-      if (Platform.OS !== 'android') {
-        return false;
-      }
-      
-      console.log('Health Connect derin yükleme kontrolü başlatılıyor...');
-      
-      // 1. Önce normal metodu dene
-      try {
-        const nativeModuleAvailable = isHealthConnectNativeModuleAvailable();
-        
-        if (nativeModuleAvailable) {
-          console.log('Native modül mevcut, getSdkStatus ile kontrol ediliyor...');
-          
-          try {
-            // getSdkStatus metodunu paket adı ile çağır
-            const status = await HealthConnectImpl.getSdkStatus(HEALTH_CONNECT_PACKAGE);
-            console.log('getSdkStatus yanıtı:', status);
-            if ((typeof status === 'boolean' && status === true) || 
-                (status && typeof status === 'object' && (status as any).available === true) ||
-                (typeof status === 'number' && status > 0)) {
-              console.log('getSdkStatus pozitif yanıt verdi');
-              return true;
-            }
-          } catch (apiError) {
-            console.log('getSdkStatus hatası (devam ediliyor):', apiError);
-            // Devam et, diğer kontrolleri dene
-          }
-        }
-      } catch (e) {
-        console.log('Normal modül kontrolü hatası (devam ediliyor):', e);
-      }
-      
-      // 2. NativeModules üzerinden doğrudan erişmeyi dene
-      try {
-        if (NativeModules.HealthConnect) {
-          console.log('NativeModules.HealthConnect mevcut');
-          return true;
-        }
-      } catch (e) {
-        console.log('NativeModules kontrolü hatası (devam ediliyor):', e);
-      }
-      
-      // 3. Package Manager ile Health Connect paketini kontrol et (linking üzerinden)
-      try {
-        // Standart Health Connect package
-        const canOpenHealthConnectApp = await Linking.canOpenURL('package:com.google.android.apps.healthdata');
-        if (canOpenHealthConnectApp) {
-          console.log('Health Connect paketi cihazda yüklü');
-          return true;
-        }
-      } catch (e) {
-        console.log('Package kontrolü hatası (devam ediliyor):', e);
-      }
-      
-      // 4. Play Store'da Health Connect var mı kontrol et
-      try {
-        const canOpenHealthConnectPlayStore = await Linking.canOpenURL('https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata');
-        if (canOpenHealthConnectPlayStore) {
-          console.log('Health Connect Play Store linki açılabilir');
-          // Bu app'in varlığını göstermez, sadece link açılabilir
-        }
-      } catch (e) {
-        console.log('Play Store kontrolü hatası:', e);
-      }
-      
-      // Kontroller başarısız, sahte modda devam et
-      console.log('Tüm Health Connect kontrolleri başarısız oldu, sahte mod etkinleştiriliyor');
-      return true; // Sahte mod için true döndür
-    } catch (error) {
-      console.error('Health Connect detaylı kontrol hatası:', error);
-      return true; // Hata durumunda sahte modu etkinleştir
+  // Yardımcı fonksiyonlar
+  static parseHealthConnectResponse<T>(response: any): T[] {
+    if (Array.isArray(response)) {
+      return response;
+    } else if (response && typeof response === 'object' && response.records) {
+      return response.records;
     }
+    return [];
   }
 
-  /**
-   * Kullanıcının uygulamaya VERDİĞİ izinleri kontrol eder
-   * API dokümanına göre getGrantedPermissions kullanır
-   */
-  static async checkPermissionsAlreadyGranted(): Promise<boolean> {
-    try {
-      console.log('Verilen izinler kontrol ediliyor...');
-      
-      // Eğer daha önce kontrol ettiysel ve izinler verilmişse, tekrar kontrol etme
-      if (this.permissionsGranted && this.grantedPermissionList.length > 0) {
-        console.log('Zaten izinler verilmiş (depolanan)', this.grantedPermissionList);
-        return true;
-      }
-      
-      // API'den verilen izinleri al
-      const grantedPermissions = await HealthConnectImpl.getGrantedPermissions();
-      
-      // Null kontrolü
-      if (!grantedPermissions) {
-        console.log('Hiç izin verilmemiş (null yanıt)');
-        return false;
-      }
-      
-      console.log('Verilen izinler (API yanıtı):', grantedPermissions);
-      
-      // Yeni API formatı kütüphanenin güncellemesinden sonra değişmiş olabilir
-      // Normalde string[] ya da Permission[] dönerken şimdi her bir izin bir nesne olabilir
-      if (Array.isArray(grantedPermissions)) {
-        // API'nin döndürdüğü izinleri anlamak ve kaydetmek
-        if (grantedPermissions.length > 0 && typeof grantedPermissions[0] === 'object') {
-          // { recordType: 'Steps', accessType: 'read' } formatında geliyor
-          this.grantedPermissionList = grantedPermissions.map(item => {
-            if (item && typeof item === 'object' && 'recordType' in item && 'accessType' in item) {
-              return `${item.accessType}_${item.recordType.toLowerCase()}`;
-            }
-            return String(item);
-          });
-        } else {
-          // Eski API formatı - doğrudan string dizisi
-          this.grantedPermissionList = grantedPermissions.map(perm => String(perm));
-        }
-      }
-      
-      console.log('İşlenen izin listesi:', this.grantedPermissionList);
-      
-      // En az bir izin verilmiş mi kontrol et
-      if (this.grantedPermissionList.length > 0) {
-        // Tüm verilen izinleri dahil et (daha önce sadece kalp ve adım verisi kontrol ediliyordu)
-        const hasHeartRatePermission = this.grantedPermissionList.some(
-          (perm: any) => perm.includes('heart') || 
-                 perm.includes('Heart') ||
-                 (typeof perm === 'object' && 
-                  perm.recordType && 
-                  String(perm.recordType).includes('Heart'))
-        );
-        
-        const hasStepsPermission = this.grantedPermissionList.some(
-          (perm: any) => perm.includes('step') || 
-                 perm.includes('Step') ||
-                 (typeof perm === 'object' && 
-                  perm.recordType && 
-                  String(perm.recordType).includes('Step'))
-        );
-        
-        const hasSleepPermission = this.grantedPermissionList.some(
-          (perm: any) => perm.includes('sleep') || 
-                 perm.includes('Sleep') ||
-                 (typeof perm === 'object' && 
-                  perm.recordType && 
-                  String(perm.recordType).includes('Sleep'))
-        );
-        
-        // Grantedpermissions dizisi boş değilse, izinlerin verildiğini kabul et
-        if (grantedPermissions.length > 0) {
-          console.log('Bazı izinler zaten verilmiş, yeterli kabul ediliyor');
-          this.permissionsGranted = true;
-          return true;
-        }
-        
-        // Temel izinlerimiz varsa, yeterli kabul et
-        if (hasHeartRatePermission || hasStepsPermission || hasSleepPermission) {
-          console.log('Temel izinlerden en az biri mevcut, yeterli kabul ediliyor');
-          this.permissionsGranted = true;
-          return true;
-        }
-        
-        // Eksik izinleri kontrol et - artık modern API formatına göre
-        let missingPermissions: string[] = [];
-        
-        if (!hasHeartRatePermission) missingPermissions.push('HeartRate');
-        if (!hasStepsPermission) missingPermissions.push('Steps');
-        if (!hasSleepPermission) missingPermissions.push('Sleep');
-        
-        console.log('Eksik izinler:', missingPermissions);
-      }
-      
-      // Yeterli izin verilmemiş
-      return false;
-    } catch (error) {
-      console.error('İzin kontrolü hatası:', error);
-      // Hata durumunda, kullanıcı deneyimini bozmamak için true döndürelim
-      // Bu sayede sürekli izin istenmesini önleriz
-      return true;
-    }
-  }
-
-  /**
-   * İzin isteme işlemini güvenli hale getiriyor.
-   * Direkt izin isteme yerine, ayarlar ekranına yönlendirmeyi tercih ediyor.
-   * NOT: Bu fonksiyon Android 10 ve üzeri sürümlerde uygulama çökmesini önlemek için değiştirildi.
-   */
-  static async requestPermissions(): Promise<boolean> {
-    try {
-      if (Platform.OS !== 'android') {
-        return false;
-      }
-      
-      console.log('Direkt izin isteme devre dışı bırakıldı, ayarlar ekranına yönlendiriliyor...');
-      
-      // İzin istemek yerine Health Connect ayarlarını açmayı deneyelim
-      await this.openHealthConnectApp();
-      
-      // Kullanıcıya yönlendirme yaptığımız için true döndürelim
-      return true;
-    } catch (error) {
-      console.error('İzin isteme sırasında hata:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Google Play Store'da Health Connect sayfasını açar
-   */
-  static async openHealthConnectInstallation(): Promise<boolean> {
-    try {
-      const healthConnectPlayStoreUrl = 'market://details?id=com.google.android.apps.healthdata';
-      const healthConnectWebUrl = 'https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata';
-      
-      const canOpenUrl = await Linking.canOpenURL(healthConnectPlayStoreUrl);
-      
-      if (canOpenUrl) {
-        await Linking.openURL(healthConnectPlayStoreUrl);
-      } else {
-        await Linking.openURL(healthConnectWebUrl);
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('Health Connect Play Store açma hatası:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Health Connect ayarlarını açar
-   * API dokümanındaki openHealthConnectSettings metodu
-   */
-  static async openHealthConnectApp(): Promise<boolean> {
-    try {
-      console.log('Health Connect ayarları açılıyor');
-      
-      // API dokümanına göre openHealthConnectSettings kullan
-      await HealthConnectImpl.openHealthConnectSettings();
-      return true;
-    } catch (error) {
-      console.error('Health Connect ayarları açma hatası:', error);
-      
-      // Alternatif olarak Play Store'a yönlendir
-      try {
-        return await this.openHealthConnectInstallation();
-      } catch (secondError) {
-        console.error('Alternatif açma hatası:', secondError);
-        return false;
-      }
-    }
-  }
-
-  /**
-   * Belirtilen tarih aralığındaki adım sayısını getirir
-   */
-  static async getStepsData(startDateStr: string, endDateStr: string): Promise<number> {
-    if (Platform.OS !== 'android') {
-      console.log('Health Connect sadece Android platformunda desteklenir');
-      return 0;
-    }
-
-    try {
-      console.log('Adım verisi alınıyor:', startDateStr, endDateStr);
-      
-      // readRecords fonksiyonunun var olup olmadığını kontrol et
-      if (!HealthConnectImpl || typeof HealthConnectImpl.readRecords !== 'function') {
-        console.log('⚠️ readRecords fonksiyonu bulunamadı, sahte veri döndürülüyor');
-        return 7500; // Sahte adım sayısı
-      }
-      
-      const stepsResponse = await HealthConnectImpl.readRecords('Steps', {
-        timeRangeFilter: {
-          operator: 'between',
-          startTime: startDateStr,
-          endTime: endDateStr
-        }
-      });
-      
-      console.log('Adım verisi yanıtı:', stepsResponse);
-      
-      // API yanıtını kontrol et - ya dizi ya da {records: []} nesnesi olabilir
-      let stepsRecords: any[] = [];
-      
-      if (Array.isArray(stepsResponse)) {
-        stepsRecords = stepsResponse;
-      } else if (stepsResponse && typeof stepsResponse === 'object' && stepsResponse.records) {
-        stepsRecords = stepsResponse.records;
-      }
-      
-      if (!stepsRecords || stepsRecords.length === 0) {
-        console.log('Adım verisi bulunamadı');
+  static getEmptyData(type: string): any {
+    switch (type) {
+      case 'steps':
         return 0;
-      }
-      
-      console.log('İşlenecek adım kaydı sayısı:', stepsRecords.length);
-      
-      // Toplam adım sayısını hesapla
-      let totalSteps = 0;
-      
-      for (const record of stepsRecords) {
-        if (record && typeof record.count === 'number') {
-          totalSteps += record.count;
-          console.log(`Adım kaydı: ${record.count} adım, ${record.startTime} - ${record.endTime}`);
-        } else {
-          console.log('Geçersiz adım kaydı formatı:', record);
-        }
-      }
-      
-      console.log('Toplam adım sayısı:', totalSteps);
-      return totalSteps;
-    } catch (error) {
-      console.error('Adım verisi alınırken hata oluştu:', error);
-      
-      // İzin hatası mı kontrol et
-      const errorStr = String(error);
-      if (errorStr.includes('SecurityException') || errorStr.includes('permission') || errorStr.includes('READ_STEPS')) {
-        console.log('Adım verisi izni yok, izin istemeyi deneyelim');
-        try {
-          await HealthConnectImpl.requestPermission(['read_steps'] as unknown as Permission[]);
-        } catch (permError) {
-          console.error('Adım verisi izin isteği hatası:', permError);
-        }
-      }
-      
-      return 7500; // Hata durumunda sahte veri döndür
+      case 'heartRate':
+        return {
+          values: [],
+          times: [],
+          average: 0,
+          max: 0,
+          min: 0
+        };
+      case 'oxygen':
+        return {
+          values: [],
+          times: [],
+          average: 0
+        };
+      case 'calories':
+        return 0;
+      case 'sleep':
+        return {
+          status: 'unknown',
+          values: [],
+          times: [],
+          lastUpdated: new Date().toISOString(),
+          duration: 0,
+          efficiency: 0,
+          deep: 0,
+          light: 0,
+          rem: 0,
+          awake: 0,
+          startTime: '',
+          endTime: '',
+          totalMinutes: 0,
+          stages: []
+        };
+      default:
+        return null;
     }
   }
 
-  /**
-   * Belirtilen tarih aralığındaki kalp atış hızı verilerini getirir
-   */
+  static async readHealthConnectRecords(recordType: string, startDate: string, endDate: string) {
+    try {
+      if (!this.isInitialized) {
+        const initialized = await this.initialize();
+        if (!initialized) {
+          return null;
+        }
+      }
+
+      if (!HealthConnectImpl?.readRecords) {
+        return null;
+      }
+      
+      try {
+        // En basit şekilde sorgu yap, aşırı log kaydetme
+        try {
+          const response = await HealthConnectImpl.readRecords(recordType, {
+            timeRangeFilter: {
+              operator: 'between',
+              startTime: this.formatDateStringForHealthConnect(startDate),
+              endTime: this.formatDateStringForHealthConnect(endDate)
+            }
+          });
+          
+          return response;
+        } catch (error) {
+          // Sessizce başarısızlık - kullanıcı deneyimini bozmamak için
+          return null;
+        }
+      } catch (readError) {
+        return null;
+      }
+    } catch (error) {
+      return null;
+    }
+  }
+
   static async getHeartRateData(startDateStr: string, endDateStr: string): Promise<{
     values: number[];
     times: string[];
@@ -701,73 +187,25 @@ class HealthConnectService {
     max: number;
     min: number;
   }> {
-    if (Platform.OS !== 'android') {
+      if (Platform.OS !== 'android') {
       console.log('Health Connect sadece Android platformunda desteklenir');
-      return {
-        values: [],
-        times: [],
-        average: 0,
-        max: 0,
-        min: 0,
-      };
+      return this.getEmptyData('heartRate');
     }
     
     try {
-      console.log('Nabız verisi alınıyor:', startDateStr, endDateStr);
-      
-      // readRecords fonksiyonunun var olup olmadığını kontrol et
-      if (!HealthConnectImpl || typeof HealthConnectImpl.readRecords !== 'function') {
-        console.log('⚠️ readRecords fonksiyonu bulunamadı, sahte veri döndürülüyor');
-        // Sahte nabız verileri oluştur
-        const values = [72, 75, 70, 68, 73];
-        const now = new Date();
-        const times = values.map((_, i) => new Date(now.getTime() - i * 60 * 60 * 1000).toISOString());
-        return {
-          values,
-          times,
-          average: 72,
-          max: 75,
-          min: 68,
-        };
+      const heartRateResponse = await this.readHealthConnectRecords('HeartRate', startDateStr, endDateStr);
+      if (!heartRateResponse) {
+        return this.getEmptyData('heartRate');
       }
+
+      const heartRateRecords = this.parseHealthConnectResponse<HealthRecord>(heartRateResponse);
       
-      const heartRateResponse = await HealthConnectImpl.readRecords('HeartRate', {
-        timeRangeFilter: {
-          operator: 'between',
-          startTime: startDateStr,
-          endTime: endDateStr
-        }
-      });
-      
-      console.log('Nabız verisi yanıtı:', heartRateResponse);
-      
-      // API yanıtını kontrol et - ya dizi ya da {records: []} nesnesi olabilir
-      let heartRateRecords: any[] = [];
-      
-      if (Array.isArray(heartRateResponse)) {
-        heartRateRecords = heartRateResponse;
-      } else if (heartRateResponse && typeof heartRateResponse === 'object' && heartRateResponse.records) {
-        heartRateRecords = heartRateResponse.records;
-      }
-      
-      if (!heartRateRecords || heartRateRecords.length === 0) {
-        console.log('Nabız verisi bulunamadı');
-        return {
-          values: [],
-          times: [],
-          average: 0,
-          max: 0,
-          min: 0,
-        };
-      }
-      
-      // Nabız değerlerini ve zamanlarını çıkar
       const values: number[] = [];
       const times: string[] = [];
       
-      heartRateRecords.forEach(record => {
+      heartRateRecords.forEach((record) => {
         if (record.samples && Array.isArray(record.samples)) {
-          record.samples.forEach((sample: { beatsPerMinute?: number; time?: string }) => {
+          record.samples.forEach((sample) => {
             if (sample.beatsPerMinute && sample.time) {
               values.push(sample.beatsPerMinute);
               times.push(sample.time);
@@ -776,977 +214,46 @@ class HealthConnectService {
         }
       });
       
-      // İstatistiksel değerleri hesapla
-      const average = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-      const max = values.length > 0 ? Math.max(...values) : 0;
-      const min = values.length > 0 ? Math.min(...values) : 0;
-      
-      console.log('Nabız istatistikleri:', { average, max, min, count: values.length });
       return {
         values,
         times,
-        average,
-        max,
-        min,
+        average: values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0,
+        max: values.length > 0 ? Math.max(...values) : 0,
+        min: values.length > 0 ? Math.min(...values) : 0
       };
     } catch (error) {
-      console.error('Nabız verisi alınırken hata oluştu:', error);
-      // Hata durumunda sahte veri döndür
-      const values = [72, 75, 70, 68, 73];
-      const now = new Date();
-      const times = values.map((_, i) => new Date(now.getTime() - i * 60 * 60 * 1000).toISOString());
-      return {
-        values,
-        times,
-        average: 72,
-        max: 75,
-        min: 68,
-      };
+      console.error('Nabız verisi alınırken hata:', error);
+      return this.getEmptyData('heartRate');
     }
   }
 
-  /**
-   * Belirtilen tarih aralığındaki tüm sağlık verilerini getirir
-   */
-  static async getHealthData(startDateStr: string, endDateStr: string): Promise<HealthData | null> {
-    try {
-      if (!this.isInitialized) {
-        await this.initialize();
-      }
-
-      console.log(`HealthConnectService.getHealthData çağrıldı: ${startDateStr} - ${endDateStr}`);
-      
-      // Paralel olarak tüm veri çeşitlerini çek
-      const [stepsData, heartRateData, sleepData, caloriesData, oxygenData] = await Promise.all([
-        this.getStepsData(startDateStr, endDateStr),
-        this.getHeartRateData(startDateStr, endDateStr),
-        this.getSleepData(startDateStr, endDateStr),
-        this.getCaloriesData(startDateStr, endDateStr),
-        this.getOxygenData(startDateStr, endDateStr)
-      ]);
-
-      // Tüm verileri birleştir
-      const result: HealthData = {
-        steps: stepsData,
-        heartRate: heartRateData,
-        sleep: sleepData,
-        calories: caloriesData,
-        oxygen: oxygenData,
-        sleepStressTimeline: []  // Boş bir dizi ile başlat, gerekirse doldurulacak
-      };
-
-      console.log('Health Connect verileri başarıyla çekildi');
-      
-      return result;
-    } catch (error) {
-      console.error('Health Connect verileri alınırken hata oluştu:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Belirtilen tarih aralığındaki uyku verilerini getirir
-   * Mi Band 9 ve Mi Fitness uyku verilerini desteklemek için iyileştirilmiş
-   */
-  static async getSleepData(startDateStr: string, endDateStr: string): Promise<{
-    efficiency: number;
-    duration: number;
-    deep: number;
-    light: number;
-    rem: number;
-    awake: number;
-    startTime: string;
-    endTime: string;
-  }> {
-    try {
-      console.log('Uyku verisi alınıyor:', startDateStr, endDateStr);
-      
-      // readRecords fonksiyonunun var olup olmadığını kontrol et
-      if (!HealthConnectImpl || typeof HealthConnectImpl.readRecords !== 'function') {
-        console.log('⚠️ readRecords fonksiyonu bulunamadı, sahte veri döndürülüyor');
-        return {
-          efficiency: 85,
-          duration: 420,
-          deep: 120,
-          light: 210,
-          rem: 90,
-          awake: 15,
-          startTime: new Date(Date.now() - 28800000).toISOString(),
-          endTime: new Date().toISOString()
-        };
-      }
-      
-      // Health Connect izinlerini kontrol et ve gerekirse iste
-      try {
-        const grantedPermissions = await HealthConnectImpl.getGrantedPermissions();
-        const permissionList = Array.isArray(grantedPermissions) ? grantedPermissions : [];
-        
-        const hasSleepPermission = permissionList.some((perm: any) => {
-          if (typeof perm === 'string') {
-            return perm.includes('sleep') || perm.includes('Sleep');
-          } else if (typeof perm === 'object' && perm !== null) {
-            const recordType = perm.recordType || '';
-            return String(recordType).includes('Sleep');
-          }
-          return false;
-        });
-        
-        if (!hasSleepPermission) {
-          console.log('Uyku izni eksik, izin isteniyor...');
-          await HealthConnectImpl.requestPermission(SLEEP_PERMISSIONS);
-        }
-      } catch (permError) {
-        console.warn('Uyku izni kontrolü hatası:', permError);
-      }
-      
-      // İlk olarak uyku oturumlarını (SleepSession) farklı formatlarda almayı dene
-      let sleepSessions;
-      try {
-        // Health Connect API'nin yeni versiyonu
-        sleepSessions = await HealthConnectImpl.readRecords('SleepSession', {
-          timeRangeFilter: {
-            operator: 'between',
-            startTime: startDateStr,
-            endTime: endDateStr
-          }
-        });
-      } catch (error) {
-        console.log('Standart SleepSession okuma hatası, alternatif formatta deniyorum:', error);
-        try {
-          // Alternatif API formatı
-          sleepSessions = await HealthConnectImpl.readRecords('Sleep', {
-            startTime: startDateStr,
-            endTime: endDateStr
-          });
-        } catch (altError) {
-          console.log('Alternatif Sleep okuma hatası:', altError);
-          sleepSessions = [];
-        }
-      }
-      
-      console.log('Uyku oturumları yanıtı:', JSON.stringify(sleepSessions));
-      
-      // API yanıtını kontrol et
-      let sessions: any[] = [];
-      
-      if (Array.isArray(sleepSessions)) {
-        sessions = sleepSessions;
-      } else if (sleepSessions && typeof sleepSessions === 'object' && sleepSessions.records) {
-        sessions = sleepSessions.records;
-      } else if (sleepSessions && typeof sleepSessions === 'object' && sleepSessions.data) {
-        // Mi Fitness formatı
-        sessions = sleepSessions.data;
-      }
-      
-      if (!sessions || sessions.length === 0) {
-        console.log('Uyku oturumu bulunamadı, SleepStage/SleepSegment verilerinden uyku oturumu oluşturmayı deneyelim');
-        
-        // Mi Fitness'ın kullandığı format ve alternatif formatları dene
-        let sleepStages = [];
-        const stageTypes = ['SleepStage', 'SleepSegment', 'SleepData'];
-        
-        for (const stageType of stageTypes) {
-          try {
-            console.log(`${stageType} verileri alınıyor...`);
-            const stageResult = await HealthConnectImpl.readRecords(stageType, {
-              timeRangeFilter: {
-                operator: 'between',
-                startTime: startDateStr,
-                endTime: endDateStr
-              }
-            });
-            
-            if (stageResult && (Array.isArray(stageResult) || 
-                (typeof stageResult === 'object' && 
-                (stageResult.records || stageResult.data)))) {
-              console.log(`${stageType} verileri bulundu!`);
-              sleepStages = stageResult;
-              break;
-            }
-          } catch (stageError) {
-            console.log(`${stageType} okuma hatası:`, stageError);
-            // Alternatif format dene
-            try {
-              const stageResult = await HealthConnectImpl.readRecords(stageType, {
-                startTime: startDateStr,
-                endTime: endDateStr
-              });
-              
-              if (stageResult && (Array.isArray(stageResult) || 
-                  (typeof stageResult === 'object' && 
-                  (stageResult.records || stageResult.data)))) {
-                console.log(`Alternatif format ${stageType} verileri bulundu!`);
-                sleepStages = stageResult;
-                break;
-              }
-            } catch (altStageError) {
-              console.log(`Alternatif format ${stageType} okuma hatası:`, altStageError);
-            }
-          }
-        }
-        
-        console.log('Uyku aşamaları yanıtı:', JSON.stringify(sleepStages));
-        
-        let stages: any[] = [];
-        
-        if (Array.isArray(sleepStages)) {
-          stages = sleepStages;
-        } else if (sleepStages && typeof sleepStages === 'object' && sleepStages.records) {
-          stages = sleepStages.records;
-        } else if (sleepStages && typeof sleepStages === 'object' && sleepStages.data) {
-          // Mi Fitness formatı
-          stages = sleepStages.data;
-        }
-        
-        if (stages.length > 0) {
-          // Uyku aşaması verileri varsa, bunları kullanarak uyku oturumu oluştur
-          console.log('Uyku aşaması verileri bulundu, oturum oluşturuluyor...');
-          
-          // Farklı veri formatlarını standartlaştır
-          const stageTimes = stages.map((stage: any) => {
-            // Mi Fitness/Mi Band formatını kontrol et
-            const startTimeField = stage.startTime || stage.time || stage.startDate || stage.date;
-            let endTimeField = stage.endTime || stage.endDate;
-            
-            // Eğer endTime yoksa ama duration varsa hesapla
-            if (!endTimeField && startTimeField && stage.duration) {
-              const startDate = new Date(startTimeField);
-              const durationMs = 
-                typeof stage.duration === 'number' 
-                  ? stage.duration 
-                  : (parseInt(stage.duration) || 30 * 60 * 1000); // varsayılan 30 dk (ms cinsinden)
-              
-              endTimeField = new Date(startDate.getTime() + durationMs).toISOString();
-            } else if (!endTimeField && startTimeField) {
-              // Varsayılan olarak 30 dk ekle
-              const startDate = new Date(startTimeField);
-              endTimeField = new Date(startDate.getTime() + 30 * 60 * 1000).toISOString();
-            }
-            
-            // Uyku aşama tipini standartlaştır
-            let stageType = mapSleepStage(stage.stage || stage.type || stage.sleepType || '');
-            
-            return {
-              startTime: new Date(startTimeField),
-              endTime: new Date(endTimeField),
-              stage: stageType
-            };
-          });
-          
-          // Geçersiz tarihleri filtrele
-          const validStageTimes = stageTimes.filter((st: any) => 
-            !isNaN(st.startTime.getTime()) && !isNaN(st.endTime.getTime())
-          );
-          
-          // Zaman sırasına göre sırala
-          validStageTimes.sort((a: any, b: any) => a.startTime.getTime() - b.startTime.getTime());
-          
-          if (validStageTimes.length > 0) {
-            sessions = [{
-              startTime: validStageTimes[0].startTime.toISOString(),
-              endTime: validStageTimes[validStageTimes.length - 1].endTime.toISOString(),
-              stages: validStageTimes
-            }];
-          }
-        } else {
-          console.log('Uyku aşaması verisi de bulunamadı, sahte veri döndürülüyor');
-          return {
-            efficiency: 85,
-            duration: 420,
-            deep: 120,
-            light: 210,
-            rem: 90,
-            awake: 15,
-            startTime: new Date(Date.now() - 28800000).toISOString(),
-            endTime: new Date().toISOString()
-          };
-        }
-      }
-      
-      // Bulunan en uzun uyku oturumunu kullan
-      let longestSession = sessions[0];
-      let longestDuration = 0;
-      
-      for (const session of sessions) {
-        const start = new Date(session.startTime || session.startDate || session.date);
-        const end = new Date(session.endTime || session.endDate || new Date());
-        const duration = (end.getTime() - start.getTime()) / (1000 * 60); // dakika
-        
-        if (duration > longestDuration) {
-          longestSession = session;
-          longestDuration = duration;
-        }
-      }
-      
-      // Oturum yoksa, sahte veri döndür
-      if (!longestSession) {
-        console.log('Geçerli uyku oturumu bulunamadı, sahte veri döndürülüyor');
-        return {
-          efficiency: 85,
-          duration: 420,
-          deep: 120,
-          light: 210,
-          rem: 90,
-          awake: 15,
-          startTime: new Date(Date.now() - 28800000).toISOString(),
-          endTime: new Date().toISOString()
-        };
-      }
-      
-      console.log('En uzun uyku oturumu:', longestSession);
-      
-      // Uyku aşamalarını al
-      let stages: any[] = [];
-      
-      if (longestSession.stages && Array.isArray(longestSession.stages)) {
-        // Oturumun içinde zaten aşamalar var
-        stages = longestSession.stages;
-      } else if (longestSession.sleepSegments && Array.isArray(longestSession.sleepSegments)) {
-        // Mi Fitness formatı
-        stages = longestSession.sleepSegments;
-      } else {
-        // Aşamalar yok, farklı tiplerde aşama kaydı al
-        let sleepStages = null;
-        const sessionStart = longestSession.startTime || longestSession.startDate || longestSession.date;
-        const sessionEnd = longestSession.endTime || longestSession.endDate || new Date().toISOString();
-        
-        const stageTypes = ['SleepStage', 'SleepSegment', 'SleepData'];
-        
-        for (const stageType of stageTypes) {
-          try {
-            console.log(`${stageType} verileri alınıyor...`);
-            const stageResult = await HealthConnectImpl.readRecords(stageType, {
-              timeRangeFilter: {
-                operator: 'between',
-                startTime: sessionStart,
-                endTime: sessionEnd
-              }
-            });
-            
-            if (stageResult && (Array.isArray(stageResult) || 
-                (typeof stageResult === 'object' && 
-                (stageResult.records || stageResult.data)))) {
-              console.log(`${stageType} verileri bulundu!`);
-              sleepStages = stageResult;
-              break;
-            }
-          } catch (stageError) {
-            console.log(`${stageType} okuma hatası:`, stageError);
-            // Alternatif format dene
-            try {
-              const stageResult = await HealthConnectImpl.readRecords(stageType, {
-                startTime: sessionStart,
-                endTime: sessionEnd
-              });
-              
-              if (stageResult && (Array.isArray(stageResult) || 
-                  (typeof stageResult === 'object' && 
-                  (stageResult.records || stageResult.data)))) {
-                console.log(`Alternatif format ${stageType} verileri bulundu!`);
-                sleepStages = stageResult;
-                break;
-              }
-            } catch (altStageError) {
-              console.log(`Alternatif format ${stageType} okuma hatası:`, altStageError);
-            }
-          }
-        }
-        
-        if (Array.isArray(sleepStages)) {
-          stages = sleepStages;
-        } else if (sleepStages && typeof sleepStages === 'object' && sleepStages.records) {
-          stages = sleepStages.records;
-        } else if (sleepStages && typeof sleepStages === 'object' && sleepStages.data) {
-          stages = sleepStages.data;
-        }
-      }
-      
-      console.log('Uyku aşamaları:', stages);
-      
-      // Uyku aşamalarını işle
-      let deepSleep = 0;
-      let lightSleep = 0;
-      let remSleep = 0;
-      let awakeSleep = 0;
-      
-      for (const stage of stages) {
-        // Farklı veri formatlarını standartlaştır
-        const stageStart = new Date(stage.startTime || stage.time || stage.startDate || stage.date || 0);
-        let stageEnd;
-        
-        if (stage.endTime || stage.endDate) {
-          stageEnd = new Date(stage.endTime || stage.endDate);
-        } else if (stage.duration) {
-          // Eğer endTime yoksa, time ve duration kullanarak hesapla
-          const durationMs = 
-            typeof stage.duration === 'number' 
-              ? stage.duration 
-              : (parseInt(stage.duration) || 30 * 60 * 1000); // varsayılan 30 dk (ms cinsinden)
-          
-          stageEnd = new Date(stageStart.getTime() + durationMs);
-        } else {
-          // Varsayılan olarak 30 dakika
-          stageEnd = new Date(stageStart.getTime() + 30 * 60 * 1000);
-        }
-        
-        // Geçersiz tarihleri atla
-        if (isNaN(stageStart.getTime()) || isNaN(stageEnd.getTime())) {
-          console.log('Geçersiz tarih:', stage);
-          continue;
-        }
-        
-        const durationMinutes = (stageEnd.getTime() - stageStart.getTime()) / (1000 * 60);
-        const stageType = String(stage.stage || stage.type || stage.sleepType || '').toLowerCase();
-        
-        // Mi Fitness/Mi Band için uyku tipleri
-        if (stageType.includes('deep') || stageType.includes('derin') || stageType === 'deep' || stageType === '4') {
-          deepSleep += durationMinutes;
-        } else if (stageType.includes('light') || stageType.includes('hafif') || stageType === 'light' || stageType === '2' || stageType === '1') {
-          lightSleep += durationMinutes;
-        } else if (stageType.includes('rem') || stageType === '3') {
-          remSleep += durationMinutes;
-        } else if (stageType.includes('awake') || stageType.includes('uyanık') || stageType === 'awake' || stageType === '0') {
-          awakeSleep += durationMinutes;
-        } else {
-          // Bilinmeyen aşamaları hafif uykuya ekle
-          console.log('Bilinmeyen uyku aşaması:', stageType);
-          lightSleep += durationMinutes;
-        }
-      }
-      
-      // Toplam uyku süresi
-      const startTime = new Date(longestSession.startTime || longestSession.startDate || longestSession.date);
-      const endTime = new Date(longestSession.endTime || longestSession.endDate || new Date());
-      const totalDuration = (endTime.getTime() - startTime.getTime()) / (1000 * 60);
-      
-      // Uyku aşamaları yoksa veya çok azsa, süreyi orantılı dağıt
-      const totalStageDuration = deepSleep + lightSleep + remSleep + awakeSleep;
-      
-      if (totalStageDuration < totalDuration * 0.5) {
-        console.log('Uyku aşamaları yetersiz, süre orantılı dağıtılıyor');
-        // Toplam sürenin %30'u derin, %50'si hafif, %15'i REM, %5'i uyanık
-        deepSleep = totalDuration * 0.3;
-        lightSleep = totalDuration * 0.5;
-        remSleep = totalDuration * 0.15;
-        awakeSleep = totalDuration * 0.05;
-      }
-      
-      // Uyku verimliliği (uyanık olmayan sürenin toplam süreye oranı)
-      const sleepingTime = deepSleep + lightSleep + remSleep;
-      const efficiency = Math.round((sleepingTime / totalDuration) * 100);
-      
-      return {
-        efficiency: efficiency,
-        duration: Math.round(totalDuration),
-        deep: Math.round(deepSleep),
-        light: Math.round(lightSleep),
-        rem: Math.round(remSleep),
-        awake: Math.round(awakeSleep),
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString()
-      };
-    } catch (error) {
-      console.error('Uyku verilerini alma hatası:', error);
-      
-      // İzin hatası mı kontrol et
-      const errorStr = String(error);
-      if (errorStr.includes('SecurityException') || errorStr.includes('permission') || 
-          errorStr.includes('READ_SLEEP') || errorStr.includes('SLEEP_SESSION')) {
-        console.log('Uyku verisi izni yok, izin istemeyi deneyelim');
-        try {
-          await HealthConnectImpl.requestPermission(SLEEP_PERMISSIONS);
-        } catch (permError) {
-          console.error('Uyku verisi izin isteği hatası:', permError);
-        }
-      }
-      
-      return {
-        efficiency: 85,
-        duration: 420,
-        deep: 120,
-        light: 210,
-        rem: 90,
-        awake: 15,
-        startTime: new Date(Date.now() - 28800000).toISOString(),
-        endTime: new Date().toISOString()
-      };
-    }
-  }
-
-  /**
-   * Belirtilen tarih aralığındaki mesafe verilerini getirir
-   */
-  static async getDistanceData(startDateStr: string, endDateStr: string): Promise<number> {
-    try {
-      console.log('Mesafe verisi alınıyor:', startDateStr, endDateStr);
-      
-      // readRecords fonksiyonunun var olup olmadığını kontrol et
-      if (!HealthConnectImpl || typeof HealthConnectImpl.readRecords !== 'function') {
-        console.log('⚠️ readRecords fonksiyonu bulunamadı, sahte veri döndürülüyor');
-        return 2500; // Sahte mesafe verisi: 2.5 km
-      }
-      
-      // Mesafe verilerini al - doğru zaman filtresi formatını kullan
-      const distanceData = await HealthConnectImpl.readRecords('Distance', {
-        timeRangeFilter: {
-          operator: 'between',
-          startTime: startDateStr,
-          endTime: endDateStr
-        }
-      });
-      
-      console.log('Mesafe verisi yanıtı:', distanceData);
-      
-      // API yanıtını kontrol et - ya dizi ya da {records: []} nesnesi olabilir
-      let records: any[] = [];
-      
-      if (Array.isArray(distanceData)) {
-        records = distanceData;
-      } else if (distanceData && typeof distanceData === 'object' && distanceData.records) {
-        records = distanceData.records;
-      }
-      
-      // Veri yoksa 0 döndür
-      if (!records || records.length === 0) {
-        console.log('Mesafe verisi bulunamadı');
-        return 0;
-      }
-      
-      // Toplam mesafeyi hesapla
-      let totalDistance = 0;
-      
-      for (const record of records) {
-        if (record && record.distance) {
-          totalDistance += record.distance;
-        }
-      }
-      
-      return totalDistance;
-    } catch (error) {
-      console.error('Mesafe verilerini alma hatası:', error);
-      
-      // İzin hatası mı kontrol et
-      const errorStr = String(error);
-      if (errorStr.includes('SecurityException') || errorStr.includes('permission') || errorStr.includes('READ_DISTANCE')) {
-        console.log('Mesafe verisi izni yok, izin istemeyi deneyelim');
-        try {
-          await HealthConnectImpl.requestPermission(['read_distance'] as unknown as Permission[]);
-        } catch (permError) {
-          console.error('Mesafe verisi izin isteği hatası:', permError);
-        }
-      }
-      
-      return 2500; // Hata durumunda sahte veri: 2.5 km
-    }
-  }
-
-  /**
-   * Belirtilen tarih aralığındaki kalori verilerini getirir
-   */
-  static async getCaloriesData(startDateStr: string, endDateStr: string): Promise<number> {
-    try {
-      console.log('KALORİ VERİSİ TALEP EDİLİYOR:', startDateStr, endDateStr);
-      
-      // readRecords fonksiyonunun var olup olmadığını kontrol et
-      if (!HealthConnectImpl || typeof HealthConnectImpl.readRecords !== 'function') {
-        console.log('⚠️ readRecords fonksiyonu bulunamadı, sahte veri döndürülüyor');
-        return 350; // Sahte kalori verisi
-      }
-
-      // Debug için izinleri kontrol et
-      try {
-        const permissions = await HealthConnectImpl.getGrantedPermissions();
-        console.log('KALORİ VERİSİ İÇİN VERİLEN İZİNLER:', JSON.stringify(permissions));
-      } catch (permErr) {
-        console.error('İzin kontrolü hatası:', permErr);
-      }
-      
-      // İlk olarak TotalCaloriesBurned kaydını deneyelim
-      console.log('TotalCaloriesBurned verisi alınıyor...');
-      let caloriesData = null;
-      try {
-        caloriesData = await HealthConnectImpl.readRecords('TotalCaloriesBurned', {
-          timeRangeFilter: {
-            operator: 'between',
-            startTime: startDateStr,
-            endTime: endDateStr
-          }
-        });
-        
-        console.log('TotalCaloriesBurned yanıtı:', JSON.stringify(caloriesData));
-      } catch (caloriesError) {
-        console.error('TotalCaloriesBurned hatası:', caloriesError);
-      }
-
-      // Eğer ilk deneme başarısız olursa ActiveCaloriesBurned deneyelim
-      if (!caloriesData || (Array.isArray(caloriesData) && caloriesData.length === 0) || 
-          (caloriesData && caloriesData.records && caloriesData.records.length === 0)) {
-        console.log('TotalCaloriesBurned verisi bulunamadı, ActiveCaloriesBurned deneniyor...');
-        try {
-          caloriesData = await HealthConnectImpl.readRecords('ActiveCaloriesBurned', {
-            timeRangeFilter: {
-              operator: 'between',
-              startTime: startDateStr,
-              endTime: endDateStr
-            }
-          });
-          
-          console.log('ActiveCaloriesBurned yanıtı:', JSON.stringify(caloriesData).substring(0, 200) + '...');
-        } catch (activeCaloriesError) {
-          console.error('ActiveCaloriesBurned hatası:', activeCaloriesError);
-        }
-      }
-
-      // API yanıtını kontrol et - ya dizi ya da {records: []} nesnesi olabilir
-      let records: any[] = [];
-      
-      if (Array.isArray(caloriesData)) {
-        records = caloriesData;
-      } else if (caloriesData && typeof caloriesData === 'object' && caloriesData.records) {
-        records = caloriesData.records;
-      }
-      
-      console.log('KALORİ KAYIT SAYISI:', records?.length || 0);
-      
-      // Veri yoksa bir kez daha farklı bir yöntemle deneyelim
-      if (!records || records.length === 0) {
-        console.log('Kalori verisi bulunamadı. BasalMetabolicRate deneniyor...');
-        
-        try {
-          const basalData = await HealthConnectImpl.readRecords('BasalMetabolicRate', {
-            timeRangeFilter: {
-              operator: 'between',
-              startTime: startDateStr,
-              endTime: endDateStr
-            }
-          });
-          
-          console.log('BasalMetabolicRate yanıtı:', JSON.stringify(basalData).substring(0, 200) + '...');
-          
-          if (basalData) {
-            // Bazal metabolik hız verisini işle
-            let basalRecords: any[] = [];
-            
-            if (Array.isArray(basalData)) {
-              basalRecords = basalData;
-            } else if (basalData && typeof basalData === 'object' && basalData.records) {
-              basalRecords = basalData.records;
-            }
-            
-            if (basalRecords.length > 0) {
-              // Son kayıttaki BMR değerini al ve 24 saatlik yaklaşık kalori harcaması hesapla
-              const lastRecord = basalRecords[basalRecords.length - 1];
-              let bmrValue = 0;
-              
-              // BMR değerini bulmak için nesneyi incele
-              if (lastRecord.basalMetabolicRate) {
-                bmrValue = lastRecord.basalMetabolicRate;
-              } else if (lastRecord.rate) {
-                bmrValue = lastRecord.rate;
-              } else {
-                // Nesne içinde BMR değerini ara
-                for (const key in lastRecord) {
-                  if (typeof lastRecord[key] === 'number' && key.toLowerCase().includes('rate')) {
-                    bmrValue = lastRecord[key];
-                    break;
-                  }
-                }
-              }
-              
-              if (bmrValue > 0) {
-                // 24 saatlik süreyi baz alarak kalori yakımını hesapla
-                console.log('Bazal metabolik hız bulundu:', bmrValue);
-                return Math.round(bmrValue);
-              }
-            }
-          }
-        } catch (basalError) {
-          console.error('BasalMetabolicRate hatası:', basalError);
-        }
-        
-        console.log('Hiçbir kalori verisi bulunamadı, sabit bir değer döndürülüyor');
-        return 1500; // Veri yoksa sabit bir değer döndür
-      }
-      
-      // Toplam kaloriyi hesapla
-      let totalCalories = 0;
-      
-      for (const record of records) {
-        console.log('Kalori kaydı inceleniyor:', JSON.stringify(record).substring(0, 200) + '...');
-        
-        // Energy objesi varsa içinden kalori değerini çıkar
-        if (record && record.energy) {
-          // Energy objesi içinden doğru kalori değerini çıkar
-          let calorieValue = 0;
-          
-          // inKilocalories değerini kontrol et (bu yaygın bir format)
-          if (typeof record.energy.inKilocalories === 'number') {
-            calorieValue = record.energy.inKilocalories;
-            console.log('inKilocalories değeri kullanılıyor:', calorieValue);
-          }
-          // inCalories değerini kontrol et (alternatif format)
-          else if (typeof record.energy.inCalories === 'number') {
-            calorieValue = record.energy.inCalories / 1000; // Kalori -> Kilokalori dönüşümü
-            console.log('inCalories değeri kullanılıyor (1000\'e bölündü):', calorieValue);
-          }
-          
-          // Değer çok küçükse büyütme faktörü uygula (muhtemelen birim sorunu)
-          if (calorieValue > 0 && calorieValue < 5) {
-            calorieValue = calorieValue * 1000;
-            console.log('Kalori değeri çok küçük, 1000 ile çarpıldı:', calorieValue);
-          }
-          
-          totalCalories += calorieValue;
-          console.log('Kalori ara toplam:', totalCalories);
-        } 
-        // Doğrudan energy değeri
-        else if (record && typeof record.energy === 'number') {
-          console.log('Sayısal energy değeri bulundu:', record.energy);
-          totalCalories += record.energy;
-        } 
-        // Calories değeri
-        else if (record && typeof record.calories === 'number') {
-          console.log('Calories değeri bulundu:', record.calories);
-          totalCalories += record.calories;
-        } 
-        // Doğrudan sayısal değer
-        else if (record && typeof record === 'number') {
-          console.log('Sayısal değer bulundu:', record);
-          totalCalories += record;
-        } 
-        // Nesne içinde kalori arama
-        else {
-          // Nesne içinde enerji/kalori değerini arayalım
-          console.log('Nesne içinde kalori değeri aranıyor...');
-          
-          const searchForCalorieValue = (obj: any, depth = 0): number => {
-            // Maksimum derinlik kontrolü (sonsuz döngüleri engeller)
-            if (depth > 5) return 0;
-            
-            // Eğer obj null veya tanımsızsa
-            if (!obj) return 0;
-            
-            // Direkt değeri bulursa döndür
-            if (typeof obj === 'number') return obj;
-            
-            // Eğer obj bir sayı değilse ve inKilocalories özelliği varsa
-            if (obj.inKilocalories !== undefined) {
-              const calories = Number(obj.inKilocalories);
-              
-              // Kalori değerini doğru formata getir
-              if (!isNaN(calories)) {
-                // Çok küçük değerleri kontrol et (1'den küçük)
-                if (calories > 0 && calories < 1) {
-                  console.log('Çok küçük kalori değeri normalleştiriliyor:', calories * 100);
-                  return calories * 100; // 0.x değerini x0 kalori olarak yorumla (ör: 0.25 -> 25 kalori)
-                }
-                
-                // Çok büyük değerleri kontrol et (10000'den büyük)
-                if (calories > 10000) {
-                  console.log('Çok büyük kalori değeri normalleştiriliyor:', calories / 10);
-                  return calories / 10; // Çok büyük değerleri makul hale getir
-                }
-                
-                // Normal değerler için olduğu gibi döndür
-                return calories;
-              }
-            }
-            
-            // Eğer energy objesi varsa ve burada kalori değeri yer alıyorsa
-            if (obj.energy && obj.energy.inKilocalories !== undefined) {
-              const calories = Number(obj.energy.inKilocalories);
-              
-              if (!isNaN(calories)) {
-                // Benzer kontrollerle uygun değeri döndür
-                if (calories > 0 && calories < 1) {
-                  console.log('Energy içindeki çok küçük kalori değeri normalleştiriliyor:', calories * 100);
-                  return calories * 100;
-                }
-                
-                if (calories > 10000) {
-                  console.log('Energy içindeki çok büyük kalori değeri normalleştiriliyor:', calories / 10);
-                  return calories / 10;
-                }
-                
-                return calories;
-              }
-            }
-            
-            // Eğer obj bir dizi ise, içindeki öğeleri kontrol et
-            if (Array.isArray(obj)) {
-              let totalCalories = 0;
-              for (const item of obj) {
-                totalCalories += searchForCalorieValue(item, depth + 1);
-              }
-              return totalCalories;
-            }
-            
-            // Eğer obj bir nesne ise, tüm alt özelliklerini kontrol et
-            if (typeof obj === 'object') {
-              let totalCalories = 0;
-              for (const key in obj) {
-                if (obj.hasOwnProperty(key)) {
-                  totalCalories += searchForCalorieValue(obj[key], depth + 1);
-                }
-              }
-              return totalCalories;
-            }
-            
-            return 0;
-          };
-          
-          const foundCalories = searchForCalorieValue(record);
-          if (foundCalories > 0) {
-            totalCalories += foundCalories;
-            console.log('Kalori değeri bulundu, toplam:', totalCalories);
-          }
-        }
-      }
-      
-      console.log('HESAPLANAN TOPLAM KALORİ:', totalCalories);
-      
-      // Kalori değerini normalleştir:
-      // Çok düşük değerleri artır, çok yüksek değerleri azalt
-      if (totalCalories > 0) {
-        if (totalCalories < 10) {
-          // Çok küçük değerleri büyüt (birim hatası olabilir)
-          totalCalories = totalCalories * 100;
-          console.log('Çok küçük kalori değeri düzeltildi:', totalCalories);
-        } else if (totalCalories > 10000) {
-          // Çok büyük değerleri küçült (birim hatası olabilir)
-          totalCalories = totalCalories / 100;
-          console.log('Çok büyük kalori değeri düzeltildi:', totalCalories);
-        } else if (totalCalories > 5000) {
-          // Orta-yüksek değerler için 10'a böl (birim hatası olabilir)
-          totalCalories = totalCalories / 10;
-          console.log('Büyük kalori değeri düzeltildi:', totalCalories);
-        }
-        
-        // Tipik bir gün için gerçekçi kalori aralığı kontrol et (100-4000)
-        if (totalCalories < 100) {
-          totalCalories = 100 + Math.round(totalCalories);
-          console.log('Minimum kalori değerine ayarlandı:', totalCalories);
-        } else if (totalCalories > 4000) {
-          totalCalories = 4000;
-          console.log('Maksimum kalori değerine sınırlandı:', totalCalories);
-        }
-      }
-      
-      // Hala değer bulunamadıysa, varsayılan bir değer kullan
-      if (totalCalories === 0 || isNaN(totalCalories)) {
-        console.log('Kalori değeri bulunamadı veya geçersiz, varsayılan değer kullanılıyor');
-        return 1500; // Ortalama bir günlük kalori değeri
-      }
-      
-      // Negatif değerleri engelle
-      if (totalCalories < 0) totalCalories = 0;
-      
-      // Kalori verisi başarıyla alındı, tam sayıya yuvarla
-      console.log('FİNAL KALORİ DEĞERİ:', Math.round(totalCalories));
-      return Math.round(totalCalories);
-    } catch (error) {
-      console.error('Kalori verilerini alma hatası:', error);
-      
-      // İzin hatası mı kontrol et
-      const errorStr = String(error);
-      if (errorStr.includes('SecurityException') || errorStr.includes('permission') || errorStr.includes('READ_TOTAL_CALORIES_BURNED')) {
-        console.log('Kalori verisi izni yok, izin istemeyi deneyelim');
-        try {
-          await HealthConnectImpl.requestPermission([
-            'read_total_calories_burned', 
-            'read_active_calories_burned', 
-            'read_basal_metabolic_rate'
-          ] as unknown as Permission[]);
-        } catch (permError) {
-          console.error('Kalori verisi izin isteği hatası:', permError);
-        }
-      }
-      
-      // Hata durumunda varsayılan değer döndür (random ile biraz değişkenlik katarak)
-      const defaultCalories = 1500 + Math.floor(Math.random() * 200);
-      console.log('Hata nedeniyle varsayılan değer döndürülüyor:', defaultCalories);
-      return defaultCalories;
-    }
-  }
-
-  /**
-   * Belirtilen tarih aralığındaki oksijen satürasyonu verilerini getirir
-   */
   static async getOxygenData(startDateStr: string, endDateStr: string): Promise<{
     values: number[];
     times: string[];
     average: number;
   }> {
-    if (Platform.OS !== 'android') {
+      if (Platform.OS !== 'android') {
       console.log('Health Connect sadece Android platformunda desteklenir');
-      return {
-        values: [],
-        times: [],
-        average: 0,
-      };
+      return this.getEmptyData('oxygen');
     }
     
     try {
-      console.log('Oksijen verisi alınıyor:', startDateStr, endDateStr);
-      
-      // readRecords fonksiyonunun var olup olmadığını kontrol et
-      if (!HealthConnectImpl || typeof HealthConnectImpl.readRecords !== 'function') {
-        console.log('⚠️ readRecords fonksiyonu bulunamadı, sahte veri döndürülüyor');
-        // Sahte oksijen verileri oluştur
-        const values = [98, 97, 98, 99, 98, 97, 98];
-        const now = new Date();
-        const times = values.map((_, i) => new Date(now.getTime() - i * 60 * 60 * 1000).toISOString());
-        return {
-          values,
-          times,
-          average: 98,
-        };
+      const oxygenResponse = await this.readHealthConnectRecords('OxygenSaturation', startDateStr, endDateStr);
+      if (!oxygenResponse) {
+        return this.getEmptyData('oxygen');
       }
+
+      const oxygenRecords = this.parseHealthConnectResponse<HealthRecord>(oxygenResponse);
       
-      const oxygenResponse = await HealthConnectImpl.readRecords('OxygenSaturation', {
-        timeRangeFilter: {
-          operator: 'between',
-          startTime: startDateStr,
-          endTime: endDateStr
-        }
-      });
-      
-      console.log('Oksijen verisi yanıtı:', oxygenResponse);
-      
-      // API yanıtını kontrol et - ya dizi ya da {records: []} nesnesi olabilir
-      let oxygenRecords: any[] = [];
-      
-      if (Array.isArray(oxygenResponse)) {
-        oxygenRecords = oxygenResponse;
-      } else if (oxygenResponse && typeof oxygenResponse === 'object' && oxygenResponse.records) {
-        oxygenRecords = oxygenResponse.records;
-      }
-      
-      if (!oxygenRecords || oxygenRecords.length === 0) {
-        console.log('Oksijen verisi bulunamadı');
-        return {
-          values: [],
-          times: [],
-          average: 0,
-        };
-      }
-      
-      // Oksijen değerlerini ve zamanlarını çıkar
       const values: number[] = [];
       const times: string[] = [];
       
-      // Loglar gösteriyor ki API yanıt formatı: 
-      // { records: [{ percentage: 95, time: '2025-04-06T10:03:00Z' }] }
-      // Bu bazı kayıtlarda samples olmadan doğrudan percentage ve time içeriyor
-      oxygenRecords.forEach(record => {
-        // Doğrudan percentage ve time içeren kayıtları kontrol et (yeni format)
+      oxygenRecords.forEach((record) => {
         if (record.percentage !== undefined && record.time) {
           values.push(record.percentage);
           times.push(record.time);
-        }
-        // Samples dizisi içeren kayıtları kontrol et (eski format)
-        else if (record.samples && Array.isArray(record.samples)) {
-          record.samples.forEach((sample: { percentage?: number; time?: string }) => {
+        } else if (record.samples && Array.isArray(record.samples)) {
+          record.samples.forEach((sample) => {
             if (sample.percentage !== undefined && sample.time) {
               values.push(sample.percentage);
               times.push(sample.time);
@@ -1755,825 +262,766 @@ class HealthConnectService {
         }
       });
       
-      // İstatistiksel değerleri hesapla
-      const average = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-      
-      console.log('Oksijen istatistikleri:', { average, count: values.length });
       return {
         values,
         times,
-        average,
+        average: values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0
       };
     } catch (error) {
-      console.error('Oksijen verisi alınırken hata oluştu:', error);
-      // Hata durumunda sahte veri döndür
-      const values = [98, 97, 98, 99, 98, 97, 98];
-      const now = new Date();
-      const times = values.map((_, i) => new Date(now.getTime() - i * 60 * 60 * 1000).toISOString());
-      return {
-        values,
-        times, 
-        average: 98,
-      };
+      console.error('Oksijen verisi alınırken hata:', error);
+      return this.getEmptyData('oxygen');
     }
   }
 
-  /**
-   * Sayısal stres değerini kategorik ifadeye dönüştürür
-   * @param stressValue Stres değeri (0-100)
-   * @returns Stres kategorisi ve renk kodu
-   */
-  static getStressCategory(stressValue: number): { category: string, color: string } {
-    if (stressValue <= 30) {
-      return { category: 'Rahat', color: '#4CAF50' }; // Yeşil
-    } else if (stressValue <= 50) {
-      return { category: 'Ilımlı', color: '#FFC107' }; // Sarı
-    } else if (stressValue <= 75) {
-      return { category: 'Yüksek', color: '#FF9800' }; // Turuncu
-    } else {
-      return { category: 'Çok Yüksek', color: '#F44336' }; // Kırmızı
-    }
-  }
-
-  /**
-   * Belirtilen tarih aralığındaki stres seviyesi verilerini getirir
-   * Mi Band 9 ve Mi Fitness'ın stres ölçümlerini Health Connect'e aktarması için iyileştirildi
-   */
-  static async getStressData(startDateStr: string, endDateStr: string): Promise<{
-    values: number[];
-    times: string[];
-    average: number;
-    category: string;
-    categoryValues: string[];
-    color: string;
-    count: number;
-  }> {
+  static async getStepsData(startDateStr: string, endDateStr: string): Promise<number> {
     if (Platform.OS !== 'android') {
       console.log('Health Connect sadece Android platformunda desteklenir');
-      return {
-        values: [],
-        times: [],
-        average: 0,
-        category: 'Bilinmiyor',
-        categoryValues: [],
-        color: '#9E9E9E',
-        count: 0
-      };
+      return 0;
+    }
+
+    try {
+      // Health Connect'ten adım verilerini al
+      console.log('Adım verileri alınmaya çalışılıyor...');
+      
+      // Önce standart "Steps" kaydını dene
+      let stepsResponse = await this.readHealthConnectRecords('Steps', startDateStr, endDateStr);
+      
+      // Eğer veri gelmezse alternatif kayıt adlarını dene
+      if (!stepsResponse) {
+        console.log('Standard Steps kaydı bulunamadı, alternatif isimler deneniyor...');
+        stepsResponse = await this.readHealthConnectRecords('StepCount', startDateStr, endDateStr);
+      }
+      
+      // Son çare olarak DailySteps'i deneyelim
+      if (!stepsResponse) {
+        console.log('StepCount kaydı bulunamadı, DailySteps deneniyor...');
+        stepsResponse = await this.readHealthConnectRecords('DailySteps', startDateStr, endDateStr);
+      }
+      
+      if (!stepsResponse) {
+        console.log('Adım verisi bulunamadı, sıfır döndürülüyor');
+        return 0;
+      }
+
+      console.log('Adım verisi yanıtı alındı');
+      const stepsRecords = this.parseHealthConnectResponse<HealthRecord>(stepsResponse);
+      console.log('Adım kayıt sayısı:', stepsRecords.length);
+      
+      let totalSteps = 0;
+      
+      stepsRecords.forEach((record) => {
+        if (record.count !== undefined) {
+          totalSteps += record.count;
+        } else if (record.steps !== undefined) {
+          totalSteps += record.steps;
+        } else if (record.value !== undefined) {
+          totalSteps += record.value;
+        }
+      });
+      
+      console.log('Toplam adım sayısı:', totalSteps);
+      return totalSteps;
+    } catch (error) {
+      console.error('Adım verisi alınırken hata:', error);
+      return 0;
+    }
+  }
+
+ /**
+   * Belirtilen tarih aralığındaki kalori verilerini getirir
+   */
+ static async getCaloriesData(startDateStr: string, endDateStr: string): Promise<number> {
+  try {
+    console.log('[HealthConnectService] Kalori verisi alınıyor:', startDateStr, endDateStr);
+    
+    // Tarih formatını düzelt
+    const safeStartDate = this.formatDateStringForHealthConnect(startDateStr);
+    const safeEndDate = this.formatDateStringForHealthConnect(endDateStr);
+    
+    // Servis kontrolü
+    if (!HealthConnectImpl || typeof HealthConnectImpl.readRecords !== 'function') {
+      console.log('⚠️ readRecords fonksiyonu bulunamadı, varsayılan kalori verisi döndürülüyor');
+      return 0; // Varsayılan kalori verisi
     }
     
     try {
-      console.log('Stres verisi alınıyor:', startDateStr, endDateStr);
-      
-      // Önce direkt olarak StressLevel verilerini almayı dene (Mi Fitness için)
-      try {
-        console.log('Direkt StressLevel verileri alınıyor...');
-        
-        // Farklı olası kayıt tiplerini deneyeceğiz
-        const stressRecordTypes = ['StressLevel', 'Stress', 'MentalStress', 'StressRecord'];
-        let stressData = null;
-        
-        for (const recordType of stressRecordTypes) {
-          try {
-            console.log(`${recordType} kayıt türü deneniyor...`);
-            // Health Connect API formatı
-            const result = await HealthConnectImpl.readRecords(recordType, {
-              timeRangeFilter: {
-                operator: 'between',
-                startTime: startDateStr,
-                endTime: endDateStr
-              }
-            });
-            
-            if (result && (
-                (Array.isArray(result) && result.length > 0) || 
-                (typeof result === 'object' && result.records && result.records.length > 0) ||
-                (typeof result === 'object' && result.data && result.data.length > 0)
-              )) {
-              console.log(`${recordType} verileri bulundu!`);
-              stressData = result;
-              break;
-            }
-          } catch (stressError) {
-            console.log(`${recordType} okuma hatası:`, stressError);
-            
-            // Alternatif format dene
-            try {
-              const result = await HealthConnectImpl.readRecords(recordType, {
-                startTime: startDateStr,
-                endTime: endDateStr
-              });
-              
-              if (result && (
-                  (Array.isArray(result) && result.length > 0) || 
-                  (typeof result === 'object' && result.records && result.records.length > 0) ||
-                  (typeof result === 'object' && result.data && result.data.length > 0)
-                )) {
-                console.log(`Alternatif format ${recordType} verileri bulundu!`);
-                stressData = result;
-                break;
-              }
-            } catch (altError) {
-              console.log(`Alternatif format ${recordType} okuma hatası:`, altError);
-            }
+      const [activeCaloriesData] = await Promise.all([
+        HealthConnectImpl.readRecords('ActiveCaloriesBurned', {
+          timeRangeFilter: {
+            operator: 'between',
+            startTime: safeStartDate,
+            endTime: safeEndDate
           }
-        }
-        
-        if (stressData) {
-          console.log('Stres verileri bulundu, işleniyor...');
-          
-          // Veri formatını standartlaştırma
-          let stressRecords: any[] = [];
-          
-          if (Array.isArray(stressData)) {
-            stressRecords = stressData;
-          } else if (stressData && typeof stressData === 'object') {
-            if (stressData.records && Array.isArray(stressData.records)) {
-              stressRecords = stressData.records;
-            } else if (stressData.data && Array.isArray(stressData.data)) {
-              stressRecords = stressData.data;
-            }
-          }
-          
-          if (stressRecords.length > 0) {
-            // Kayıtları zaman sırasına göre sırala
-            stressRecords.sort((a, b) => {
-              const timeA = new Date(a.time || a.startTime || a.date || a.timestamp || 0).getTime();
-              const timeB = new Date(b.time || b.startTime || b.date || b.timestamp || 0).getTime();
-              return timeA - timeB;
-            });
-            
-            // Stres değeri alanını bul (level, value, score, stressLevel vb.)
-            const stressValues: number[] = [];
-            const stressTimes: string[] = [];
-            
-            for (const record of stressRecords) {
-              // Zaman alanı
-              const timeField = record.time || record.startTime || record.date || record.timestamp;
-              if (!timeField) {
-                console.log('Zaman alanı bulunamadı:', record);
-                continue;
-              }
-              
-              // Stres değeri alanı
-              let stressValue: number | null = null;
-              
-              // Olası stres değeri alanları
-              const possibleFields = ['level', 'value', 'score', 'stressLevel', 'stressValue', 'stress'];
-              
-              for (const field of possibleFields) {
-                if (record[field] !== undefined && record[field] !== null) {
-                  // Değeri sayıya çevir (string olabilir)
-                  stressValue = typeof record[field] === 'number' ? 
-                    record[field] : 
-                    parseFloat(record[field]);
-                  
-                  break;
-                }
-              }
-              
-              // Eğer stres değeri bulunamadıysa bir sonraki kayda geç
-              if (stressValue === null) {
-                console.log('Stres değeri bulunamadı:', record);
-                continue;
-              }
-              
-              // Stres değeri aralığını kontrol et ve standartlaştır (0-100 arası)
-              // Mi Band genelde 0-100 arasında değer üretir, ama bazı cihazlar farklı aralıklar kullanabilir
-              if (stressValue < 0) {
-                console.log('Negatif stres değeri bulundu, 0 olarak ayarlanıyor:', stressValue);
-                stressValue = 0;
-              } else if (stressValue > 100) {
-                // 0-4 aralığında değer varsa, 0-100 aralığına çevir (bazı cihazlar bu şekilde kaydeder)
-                if (stressValue <= 4) {
-                  stressValue = stressValue * 25; // 0-4 -> 0-100
-                } else {
-                  console.log('100\'den büyük stres değeri bulundu, 100 olarak ayarlanıyor:', stressValue);
-                  stressValue = 100;
-                }
-              }
-              
-              stressValues.push(stressValue);
-              stressTimes.push(new Date(timeField).toISOString());
-            }
-            
-            if (stressValues.length > 0) {
-              const stressAverage = Math.round(stressValues.reduce((a, b) => a + b, 0) / stressValues.length);
-              const categoryValues = stressValues.map(val => this.getStressCategory(val).category);
-              const { category, color } = this.getStressCategory(stressAverage);
-              
-              console.log('Direkt stres verileri:', {
-                average: stressAverage,
-                count: stressValues.length,
-                category
-              });
-              
-              return {
-                values: stressValues,
-                times: stressTimes,
-                average: stressAverage,
-                category,
-                categoryValues,
-                color,
-                count: stressValues.length
-              };
-            }
-          }
-        }
-        
-        console.log('Doğrudan stres verisi bulunamadı, HRV verileriyle hesaplama deneniyor...');
-      } catch (directStressError) {
-        console.log('Doğrudan stres verisi alma hatası:', directStressError);
-      }
-      
-      // Önce HRV verilerini almayı dene
-      const hrvData = await this.getHRVData(startDateStr, endDateStr);
-      console.log('HRV verisi alındı, stres hesaplanıyor...');
-      
-      // HRV verilerinden stres değerleri hesapla
-      if (hrvData.values.length > 0) {
-        const stressValues = hrvData.values.map(hrv => this.calculateStressFromHRV(hrv));
-        const stressTimes = [...hrvData.times];
-        const stressAverage = stressValues.length > 0 ? 
-          Math.round(stressValues.reduce((a, b) => a + b, 0) / stressValues.length) : 45;
-        
-        // Stres kategorilerini belirle
-        const categoryValues = stressValues.map(val => this.getStressCategory(val).category);
-        const { category, color } = this.getStressCategory(stressAverage);
-        
-        console.log('HRV\'den hesaplanan stres verileri:', {
-          average: stressAverage,
-          count: stressValues.length,
-          category
-        });
-        
-        return {
-          values: stressValues,
-          times: stressTimes,
-          average: stressAverage,
-          category,
-          categoryValues,
-          color,
-          count: stressValues.length
-        };
-      }
-      
-      // HRV verileri yoksa nabız verilerine dayalı tahmin yap
-      const heartRateData = await this.getHeartRateData(startDateStr, endDateStr);
-      
-      if (heartRateData.values.length > 0) {
-        console.log('Nabız verilerinden stres tahmini yapılıyor...');
-        
-        // Nabız değişkenliği ve dinlenme nabzına göre stres tahmini
-        const heartRateAvg = heartRateData.average;
-        const heartRateValues = heartRateData.values;
-        const stressValues: number[] = [];
-        
-        for (let i = 0; i < heartRateValues.length; i++) {
-          const currentHR = heartRateValues[i];
-          // Dinlenme nabzından yüksek nabız = daha yüksek stres
-          // Örneğin: 70 BPM baz alınıyor
-          const baseHR = 70;
-          const hrDifference = Math.max(0, currentHR - baseHR);
-          
-          // Her 10 BPM fark için stres seviyesini 15 puan artır (maksimum 100)
-          let stressFromHR = Math.min(100, 30 + (hrDifference / 10) * 15);
-          
-          // Günün saatine göre ayarla - sabah erken ve akşam geç saatlerde daha düşük stres
-          const measurementTime = new Date(heartRateData.times[i]);
-          const hour = measurementTime.getHours();
-          
-          if (hour < 7 || hour > 22) {
-            stressFromHR = Math.max(20, stressFromHR - 20); // Gece daha düşük stres
-          } else if (hour >= 9 && hour <= 17) {
-            stressFromHR = Math.min(100, stressFromHR + 10); // Çalışma saatleri daha yüksek stres
-          }
-          
-          stressValues.push(Math.round(stressFromHR));
-        }
-        
-        const stressTimes = [...heartRateData.times];
-        const stressAverage = stressValues.length > 0 ? 
-          Math.round(stressValues.reduce((a, b) => a + b, 0) / stressValues.length) : 45;
-        
-        // Stres kategorilerini belirle
-        const categoryValues = stressValues.map(val => this.getStressCategory(val).category);
-        const { category, color } = this.getStressCategory(stressAverage);
-        
-        console.log('Nabızdan hesaplanan stres verileri:', {
-          average: stressAverage,
-          count: stressValues.length,
-          category
-        });
-        
-        return {
-          values: stressValues,
-          times: stressTimes,
-          average: stressAverage,
-          category,
-          categoryValues,
-          color,
-          count: stressValues.length
-        };
-      }
-      
-      // Gerçekçi sahte veriler döndürelim (mevcut veri yoksa)
-      console.log('Gerçek veri bulunamadı, sahte stres verileri oluşturuluyor...');
-      
-      // Saat bazlı farklı stres değerleri oluşturalım
-      const now = new Date();
-      const values: number[] = [];
-      const times: string[] = [];
-      const categoryValues: string[] = [];
-      
-      // Son 24 saat için stres verileri oluştur
-      for (let i = 0; i < 24; i++) {
-        const time = new Date(now.getTime() - (i * 60 * 60 * 1000));
-        const hour = time.getHours();
-        
-        // Saate göre farklı stres seviyeleri (sabah yüksek, akşam düşük)
-        let stressValue;
-        if (hour >= 7 && hour <= 10) {
-          // Sabah saatleri - orta-yüksek stres
-          stressValue = 55 + Math.floor(Math.random() * 15);
-        } else if (hour >= 11 && hour <= 14) {
-          // Öğle saatleri - yüksek stres
-          stressValue = 60 + Math.floor(Math.random() * 20);
-        } else if (hour >= 15 && hour <= 18) {
-          // Öğleden sonra - orta stres
-          stressValue = 45 + Math.floor(Math.random() * 15);
-        } else if (hour >= 19 && hour <= 22) {
-          // Akşam - düşük-orta stres
-          stressValue = 35 + Math.floor(Math.random() * 15);
-        } else {
-          // Gece - düşük stres
-          stressValue = 20 + Math.floor(Math.random() * 15);
-        }
-        
-        values.push(stressValue);
-        times.push(time.toISOString());
-        
-        // Her değer için kategori belirle
-        const { category } = this.getStressCategory(stressValue);
-        categoryValues.push(category);
-      }
-      
-      // Ortalama stres seviyesi
-      const average = values.length > 0 ? 
-        Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 45;
-      
-      // Ortalama stres için kategori belirle
-      const { category, color } = this.getStressCategory(average);
-      
-      return {
-        values,
-        times,
-        average,
-        category,
-        categoryValues,
-        color,
-        count: values.length
-      };
-    } catch (error) {
-      console.error('Stres verilerini alma hatası:', error);
-      
-      // İzin hatası kontrolü ve izin isteği
-      const errorStr = String(error);
-      if (errorStr.includes('SecurityException') || errorStr.includes('permission')) {
-        console.log('Stres/HRV verisi izni yok, izin istemeyi deneyelim');
-        try {
-          await HealthConnectImpl.requestPermission(STRESS_PERMISSIONS);
-        } catch (permError) {
-          console.error('Stres/HRV verisi izin isteği hatası:', permError);
-        }
-      }
-      
-      // Hata durumunda makul sahte veriler
-      const now = new Date();
-      const values = Array.from({length: 12}, () => 30 + Math.floor(Math.random() * 40));
-      const times = Array.from({length: 12}, (_, i) => {
-        const time = new Date(now.getTime() - i * 7200000);
-        return time.toISOString();
+        }),
+
+      ]);
+
+      console.log('[HealthConnectService] Kalori veri yanıtı:', { 
+        activeCalories: activeCaloriesData, 
+     
       });
-      const average = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-      const categoryValues = values.map(val => this.getStressCategory(val).category);
-      const { category, color } = this.getStressCategory(average);
-      
-      return {
-        values,
-        times,
-        average,
-        category,
-        categoryValues,
-        color,
-        count: values.length
-      };
-    }
-  }
 
-  /**
-   * Health Connect bağlantısını test etmek için gerekli fonksiyon
-   * UI'da test butonu için kullanılır
-   */
-  static testConnection = async (): Promise<void> => {
-    try {
-      console.log("Health Connect API testi başlatılıyor...");
+      // API yanıtlarını kontrol et
+      let activeRecords = [];
       
-      // Health Connect yüklü mü?
-      const isInstalled = await HealthConnectService.isInstalled();
-      console.log("Health Connect yüklü:", isInstalled);
       
-      if (!isInstalled) {
-        Alert.alert(
-          "Health Connect Yüklü Değil", 
-          "Health Connect uygulaması yüklü değil. Yüklemek ister misiniz?",
-          [
-            { text: "Vazgeç" },
-            { text: "Yükle", onPress: () => HealthConnectService.openHealthConnectInstallation() }
-          ]
-        );
-        return;
+      if (Array.isArray(activeCaloriesData)) {
+        activeRecords = activeCaloriesData;
+      } else if (activeCaloriesData && typeof activeCaloriesData === 'object' && activeCaloriesData.records) {
+        activeRecords = activeCaloriesData.records;
       }
       
-      // İzinleri ilk önce mevcut verilen izinleri kontrol ederek test et
-      console.log("Verilen izinleri kontrol ediyorum...");
-      const grantedPermissions = await HealthConnectImpl.getGrantedPermissions();
-      console.log("Verilen izinler:", JSON.stringify(grantedPermissions));
-        
-      // İzin durumunu güncelle
-      HealthConnectService.permissionsGranted = grantedPermissions && grantedPermissions.length > 0;
-      HealthConnectService.grantedPermissionList = Array.isArray(grantedPermissions) 
-        ? grantedPermissions.map(perm => String(perm)) 
-        : [];
-        
-      // İzinleri analiz et
-      const hasHeartRatePermission = grantedPermissions && grantedPermissions.some(
-        (perm: any) => 
-          String(perm).includes('heart_rate') || 
-          (typeof perm === 'object' && perm.recordType === 'HeartRate')
-      );
       
-      if (grantedPermissions && grantedPermissions.length > 0) {
-        // İzinler mevcut, sağlık verilerini test amaçlı al
-        try {
-          const now = new Date();
-          const yesterday = new Date(now);
-          yesterday.setDate(yesterday.getDate() - 1);
-          
-          // Test için adım verisini almayı dene
-          const steps = await HealthConnectService.getStepsData(
-            yesterday.toISOString(), 
-            now.toISOString()
-          );
-          
-          let message = `Health Connect API'sine başarıyla bağlandınız.\n\nVerilen İzinler: ${JSON.stringify(grantedPermissions)}\n\nTest Sonucu: Son 24 saatte ${steps} adım attınız.`;
-          
-          if (!hasHeartRatePermission) {
-            message += "\n\nUYARI: Nabız verisi izni eksik, bu verileri göremeyebilirsiniz.";
+
+      let totalActiveCalories = 0;
+
+
+      // Aktif kalorileri hesapla
+      for (const record of activeRecords) {
+        if (record && typeof record.energy === 'object') {
+          // Energy bir nesne olabilir ve inCalories gibi alanları içerebilir
+          if (record.energy.inCalories !== undefined) {
+            totalActiveCalories += record.energy.inCalories;
+          } else if (record.energy.inKilocalories !== undefined) {
+            totalActiveCalories += record.energy.inKilocalories;
+          } else if (record.energy.inKilojoules !== undefined) {
+            // Kilojoule'ü kaloriye çevir (yaklaşık olarak)
+            totalActiveCalories += record.energy.inKilojoules * 0.239;
           }
-          
-          Alert.alert(
-            "Health Connect Bağlantısı Başarılı", 
-            message,
-            [{ text: "Tamam" }]
-          );
-        } catch (dataError) {
-          console.error("Veri alma testi hatası:", dataError);
-          
-          Alert.alert(
-            "Health Connect Bağlantısı Var, Fakat Veri Okunamadı", 
-            "Bağlantı başarılı ancak veriler okunamadı. Lütfen Health Connect ayarlarında uygulamanıza verdiğiniz izinleri kontrol edin.",
-            [
-              { text: "Tamam" },
-              { 
-                text: "Health Connect Ayarları", 
-                onPress: () => HealthConnectService.openHealthConnectApp() 
-              }
-            ]
-          );
+        } else if (record && typeof record.energy === 'number') {
+          totalActiveCalories += record.energy;
         }
-      } else {
-        // Hiç izin verilmemiş, izin talep et
-        Alert.alert(
-          "Health Connect İzinleri Eksik", 
-          "Health Connect'e erişmek için gerekli izinleri vermeniz gerekiyor. İzin vermek ister misiniz?",
-          [
-            { text: "Vazgeç" },
-            { 
-              text: "İzin Ver", 
-              onPress: async () => {
-                const granted = await HealthConnectService.requestPermissions();
-                if (granted) {
-                  Alert.alert(
-                    "İzinler Verildi",
-                    "Health Connect izinleri başarıyla verildi. Artık sağlık verilerinize erişebilirsiniz.",
-                    [{ text: "Tamam" }]
-                  );
-                } else {
-                  Alert.alert(
-                    "İzinler Verilmedi",
-                    "Health Connect izinleri verilemedi. Lütfen Health Connect ayarlarını açıp manuel olarak izin verin.",
-                    [
-                      { text: "Tamam" },
-                      { 
-                        text: "Health Connect Ayarları", 
-                        onPress: () => HealthConnectService.openHealthConnectApp() 
-                      }
-                    ]
-                  );
-                }
-              } 
-            }
-          ]
-        );
       }
-    } catch (error) {
-      console.error("Health Connect test hatası:", error);
-      Alert.alert(
-        "Test Hatası", 
-        "Health Connect bağlantısı test edilirken bir hata oluştu.",
-        [{ text: "Tamam" }]
-      );
-    }
-  }
 
-  /**
-   * Health Connect'in yüklü olup olmadığını kontrol eder
-   * API dokümanındaki getSdkStatus metodunu kullanır
-   */
-  static async isInstalled(): Promise<boolean> {
-    try {
-      // Android 10 ve eski sürümler için geliştirilmiş detaylı kontrol metodunu kullan
-      return await this.isInstalledOnDevice();
+      const totalCalories = Math.round(totalActiveCalories/1000 );
+      console.log('[HealthConnectService] Toplam kaloriler:', { 
+        active: totalActiveCalories, 
+        total: totalCalories 
+      });
+      
+      // Hiç veri yoksa varsayılan değer döndür
+      if (totalCalories === 0) {
+        return 0; 
+      }
+      
+      return totalCalories;
     } catch (error) {
-      console.error('Health Connect yükleme kontrolü hatası:', error);
-      return true; // Hata durumunda sahte modu etkinleştir
+      console.error('Kalori verisi alınırken hata:', error);
+      return 0; // Hata durumunda varsayılan 1500 kalori
     }
+  } catch (generalError) {
+    console.error('Kalori verisi alınırken genel hata:', generalError);
+    return 0; // Genel hata durumunda varsayılan 1500 kalori
   }
+}
 
-  /**
-   * Belirtilen tarih aralığındaki uyku ve stres verilerini birleştirir
-   */
-  static async getSleepStressData(startDateStr: string, endDateStr: string): Promise<{
-    sleep: {
-      efficiency: number;
-      duration: number;
-      deep: number;
-      light: number;
-      rem: number;
-      awake: number;
-      startTime: string;
-      endTime: string;
+  static formatDateStringForHealthConnect(dateStr: string): string {
+    const parseDate = (dateStr: string): Date => {
+      let date: Date;
+      try {
+        date = new Date(dateStr);
+        if (isNaN(date.getTime())) {
+          console.warn('Geçersiz tarih formatı, bugünü kullanıyorum:', dateStr);
+          date = new Date(); // Geçersiz tarih olduğunda bugünü kullan
+        }
+      } catch (e) {
+        console.warn('Tarih ayrıştırılamadı, bugünü kullanıyorum:', dateStr);
+        date = new Date(); // Tarih ayrıştırılamadıysa bugünü kullan
+      }
+      return date;
     };
-    combinedTimeline: {
-      time: string;
-      sleepStage?: string;
-    }[];
-  }> {
+  
+    const formatDate = (date: Date): string => {
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(date.getUTCDate()).padStart(2, '0');
+      const hours = String(date.getUTCHours()).padStart(2, '0');
+      const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}Z`;
+    };
+  
     try {
-      // Uyku verilerini al
-      const sleep = await this.getSleepData(startDateStr, endDateStr);
-      
-      // Sadece uyku verisi içeren bir zaman çizelgesi oluştur
-      let combinedTimeline: { time: string; sleepStage?: string; }[] = [];
-      
-      // Boş bir sonuç döndür, bu fonksiyon artık stress verisi işlemeyecek
-      return {
-        sleep,
-        combinedTimeline
-      };
+      console.log('İşlenmeden önce tarih:', dateStr);
+      const date = parseDate(dateStr);
+      const formattedDate = formatDate(date);
+      console.log('Düzeltilen tarih:', formattedDate);
+      return formattedDate;
     } catch (error) {
-      console.error('Uyku verilerini alma hatası:', error);
+      console.error('Tarih formatı düzeltme hatası:', error);
+      const now = new Date();
+      const fallbackDate = formatDate(now); // Hata durumunda bugünün tarihini kullan
+      console.log('Hata nedeniyle kullanılan tarih:', fallbackDate);
+      return fallbackDate;
+    }
+  }
+  
+  
+  
+  
+
+  static async getHealthData(startDateStr: string, endDateStr: string): Promise<HealthDataType | null> {
+    try {
+      if (!this.isInitialized) {
+        const initResult = await this.initialize();
+        console.log(`Health Connect başlatma sonucu: ${initResult}`);
+      }
+
+      console.log(`HealthConnectService.getHealthData çağrıldı: ${startDateStr} - ${endDateStr}`);
       
-      // Hata durumunda boş veriler döndür
-      return {
-        sleep: {
-          efficiency: 0,
+      // Paralel olarak tüm veri çeşitlerini çek
+      console.log("Veri türleri için Health Connect sorguları yapılıyor");
+      const [stepsData, heartRateData, sleepData, caloriesData, oxygenData] = await Promise.all([
+        this.getStepsData(startDateStr, endDateStr),
+        this.getHeartRateData(startDateStr, endDateStr),
+        this.getSleepData(startDateStr, endDateStr),
+        this.getCaloriesData(startDateStr, endDateStr),
+        this.getOxygenData(startDateStr, endDateStr)
+      ]);
+
+      console.log("Health Connect sorguları tamamlandı, sonuçlar:");
+      console.log("- Adımlar:", stepsData);
+      console.log("- Kalori:", caloriesData);
+      console.log("- Nabız:", heartRateData?.average || 0);
+      console.log("- Oksijen:", oxygenData?.average || 0);
+      console.log("- Uyku:", sleepData?.totalMinutes || 0);
+
+      const now = new Date().toISOString();
+      
+      // Sonuçları doğru formatta hazırla ve döndür
+      const result = {
+        heartRate: {
+          values: heartRateData.values || [],
+          times: heartRateData.times || [],
+          average: heartRateData.average || 0,
+          max: heartRateData.max || 0,
+          min: heartRateData.min || 0,
+          lastUpdated: now,
+          status: 'good' as const
+        },
+        steps: { 
+          total: stepsData || 0,
+          values: [stepsData || 0],
+          times: [now],
+          lastUpdated: now,
+          status: 'good' as const,
+        },
+        sleep: sleepData || {
           duration: 0,
+          efficiency: 0,
           deep: 0,
           light: 0,
           rem: 0,
           awake: 0,
-          startTime: '',
-          endTime: ''
+          startTime: now,
+          endTime: now,
+          totalMinutes: 0,
+          stages: [],
+          values: [0],
+          times: [now],
+          lastUpdated: now,
+          status: 'good' as const
         },
-        combinedTimeline: []
+        calories: { 
+          total: caloriesData || 0,
+          values: [caloriesData || 0],
+          times: [now],
+          lastUpdated: now,
+          status: 'good' as const,
+        },
+        oxygen: {
+          values: oxygenData.values || [],
+          times: oxygenData.times || [],
+          average: oxygenData.average || 0,
+          max: oxygenData.average || 0,
+          min: oxygenData.average || 0,
+          lastUpdated: now,
+          status: 'good' as const
+        }
       };
-    }
-  }
 
-  /**
-   * HRV (Kalp Atış Hızı Değişkenliği) verilerini kullanarak stres seviyesi hesaplar
-   * Bu fonksiyon stres seviyesini tahmin eder, kesin bir ölçüm değildir
-   */
-  static async getHRVData(startDateStr: string, endDateStr: string): Promise<{
-    values: number[];
-    times: string[];
-    average: number;
-  }> {
-    try {
-      console.log('HRV verisi alınıyor:', startDateStr, endDateStr);
+      console.log("Health Connect veri paketi hazırlandı");
+      console.log('Health Connect verileri başarıyla çekildi');
       
-      // readRecords fonksiyonunun var olup olmadığını kontrol et
-      if (!HealthConnectImpl || typeof HealthConnectImpl.readRecords !== 'function') {
-        console.log('⚠️ readRecords fonksiyonu bulunamadı, sahte veri döndürülüyor');
-        // Sahte HRV verileri oluştur
-        const values = [45, 47, 40, 50, 48, 46, 45];
-        const now = new Date();
-        const times = values.map((_, i) => new Date(now.getTime() - i * 60 * 60 * 1000).toISOString());
-        return {
-          values,
-          times,
-          average: 45,
-        };
-      }
-      
-      const hrvResponse = await HealthConnectImpl.readRecords('HeartRateVariability', {
-        timeRangeFilter: {
-          operator: 'between',
-          startTime: startDateStr,
-          endTime: endDateStr
-        }
-      });
-      
-      console.log('HRV verisi yanıtı:', hrvResponse);
-      
-      // API yanıtını kontrol et
-      let hrvRecords: any[] = [];
-      
-      if (Array.isArray(hrvResponse)) {
-        hrvRecords = hrvResponse;
-      } else if (hrvResponse && typeof hrvResponse === 'object' && hrvResponse.records) {
-        hrvRecords = hrvResponse.records;
-      }
-      
-      if (!hrvRecords || hrvRecords.length === 0) {
-        console.log('HRV verisi bulunamadı, nabız değişkenliğine dayalı sahte stres verisi üretiliyor');
-        
-        // Nabız verilerini alarak HRV tahmini yap
-        const heartRateData = await this.getHeartRateData(startDateStr, endDateStr);
-        if (heartRateData.values.length === 0) {
-          // Nabız verisi de yoksa sahte veri döndür
-          return {
-            values: [45, 47, 40, 50, 48, 46, 45],
-            times: Array.from({length: 7}, (_, i) => new Date(Date.now() - i * 3600000).toISOString()),
-            average: 45
-          };
-        }
-        
-        // Nabız değerlerinden basit bir HRV tahmini yap (gerçek bir HRV hesaplaması olmasa da fikir verir)
-        // Art arda nabız değerlerinin farkını alarak basit bir değişkenlik ölçüsü hesaplanır
-        const values: number[] = [];
-        const times: string[] = [];
-        
-        for (let i = 1; i < heartRateData.values.length; i++) {
-          const diff = Math.abs(heartRateData.values[i] - heartRateData.values[i - 1]);
-          // HRV için doğrusal olmayan bir dönüşüm (farklar arttıkça HRV daha yüksek)
-          const hrvEstimate = Math.max(20, Math.min(100, 30 + diff * 3)); 
-          values.push(hrvEstimate);
-          times.push(heartRateData.times[i]);
-        }
-        
-        return {
-          values,
-          times, 
-          average: values.length > 0 ? 
-            Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 45
-        };
-      }
-      
-      // HRV değerlerini ve zamanlarını çıkar
-      const values: number[] = [];
-      const times: string[] = [];
-      
-      hrvRecords.forEach(record => {
-        if (record.samplingFrequency !== undefined && record.time) {
-          // HeartRateVariability verileri genellikle samplingFrequency olarak gelir (ms cinsinden)
-          values.push(record.samplingFrequency);
-          times.push(record.time);
-        } else if (record.samples && Array.isArray(record.samples)) {
-          record.samples.forEach((sample: { samplingFrequency?: number; time?: string }) => {
-            if (sample.samplingFrequency !== undefined && sample.time) {
-              values.push(sample.samplingFrequency);
-              times.push(sample.time);
-            }
-          });
-        }
-      });
-      
-      // İstatistiksel değerleri hesapla
-      const average = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-      
-      console.log('HRV istatistikleri:', { average, count: values.length });
-      return {
-        values,
-        times,
-        average,
-      };
+      return result;
     } catch (error) {
-      console.error('HRV verisi alınırken hata oluştu:', error);
+      console.error('Health Connect verileri alınırken hata oluştu:', error);
       
-      // İzin hatası mı kontrol et
-      const errorStr = String(error);
-      if (errorStr.includes('SecurityException') || errorStr.includes('permission') || 
-          errorStr.includes('READ_HEART_RATE_VARIABILITY')) {
-        console.log('HRV verisi izni yok, izin istemeyi deneyelim');
+      // Hata durumunda boş veri döndür
+      return this.getEmptyHealthData();
+    }
+  }
+  
+  // Boş sağlık verisi oluşturan yardımcı fonksiyon
+  private static getEmptyHealthData(): HealthDataType {
+    const now = new Date().toISOString();
+    return {
+      heartRate: {
+        values: [],
+        times: [],
+        average: 0,
+        max: 0,
+        min: 0,
+        lastUpdated: now,
+        status: 'good' as const
+      },
+      steps: { 
+        total: 0,
+        values: [0],
+        times: [now],
+        lastUpdated: now,
+        status: 'good' as const,
+      },
+      sleep: {
+        duration: 0,
+        efficiency: 0,
+        deep: 0,
+        light: 0,
+        rem: 0,
+        awake: 0,
+        startTime: now,
+        endTime: now,
+        totalMinutes: 0,
+        stages: [],
+        values: [0],
+        times: [now],
+        lastUpdated: now,
+        status: 'good' as const
+      },
+      calories: {
+        total: 0,
+        values: [0],
+        times: [now],
+        lastUpdated: now,
+        status: 'good' as const,
+      },
+      oxygen: {
+        values: [],
+        times: [],
+        average: 0,
+        max: 0,
+        min: 0,
+        lastUpdated: now,
+        status: 'good' as const
+      }
+    };
+  }
+
+  static async initialize(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      this.log('Health Connect sadece Android platformunda desteklenir');
+      return false;
+    }
+  
+    try {
+      // Eğer zaten başlatılmışsa tekrar başlatmaya gerek yok
+      if (this.isInitialized === true) {
+        this.log('Health Connect zaten başlatılmış');
+        return true;
+      }
+  
+      // Önce yüklü olup olmadığını kontrol et
+      const installed = await this.isInstalled();
+      if (!installed) {
+        console.log('Health Connect yüklü değil');
+        return false;
+      }
+  
+      // Kotlin tarafı sadece providerPackageName bekliyor
+      if (HealthConnectImpl.initialize) {
+        await HealthConnectImpl.initialize('com.google.android.apps.healthdata');
+      }
+  
+      // Tüm izin kontrollerini sadece bir kez yap
+      if (!this.permissionsGranted && !this.permissionRequested) {
+        this.permissionRequested = true;
         try {
-          await HealthConnectImpl.requestPermission(['read_heart_rate_variability'] as unknown as Permission[]);
+          console.log('Health Connect izinleri kontrol ediliyor...');
+          if (HealthConnectImpl.getGrantedPermissions) {
+            const grantedPermissions = await HealthConnectImpl.getGrantedPermissions();
+            if (Array.isArray(grantedPermissions) && grantedPermissions.length > 0) {
+              this.grantedPermissionList = grantedPermissions;
+              this.permissionsGranted = true;
+              console.log('İzinler zaten verilmiş, tekrar istemeye gerek yok');
+            } else {
+              console.log('Health Connect izinleri eksik, bir kez izin isteniyor...');
+              await this.requestPermissions();
+            }
+          }
         } catch (permError) {
-          console.error('HRV verisi izin isteği hatası:', permError);
+          console.log('İzin kontrolü hatası, kullanıcı deneyimini bozmamak için devam ediliyor:', permError);
+          this.permissionsGranted = true;
+        }
+      }
+  
+      console.log('Health Connect başlatıldı');
+      this.isInitialized = true;
+      return true;
+    } catch (error) {
+      console.error('Health Connect başlatma hatası:', error);
+      return false;
+    }
+  }
+  
+
+  static async checkPermissionsAlreadyGranted(): Promise<boolean> {
+    try {
+      if (this.permissionsGranted) {
+        return true;
+      }
+  
+      if (HealthConnectImpl.getGrantedPermissions) {
+        const grantedPermissions = await HealthConnectImpl.getGrantedPermissions();
+  
+        const requiredPermissions = [
+          'ActiveCaloriesBurnedRecord',
+          'StepCountRecord',
+          'HeartRateRecord',
+          'OxygenSaturationRecord',
+          'SleepSessionRecord',
+          'SleepStageRecord',
+          'BasalMetabolicRateRecord',
+          'TotalCaloriesBurnedRecord',
+          'CaloriesBurnedRecord',
+        ];
+  
+        const allGranted = requiredPermissions.every(p => grantedPermissions.includes(p));
+  
+        this.grantedPermissionList = grantedPermissions;
+        this.permissionsGranted = allGranted;
+  
+        return allGranted;
+      }
+    } catch (error) {
+      console.warn('İzin kontrolü hatası:', error);
+      // Bu noktada false dönmek daha güvenlidir
+    }
+  
+    return false;
+  }
+  
+  
+  static async requestPermissions(): Promise<boolean> {
+    try {
+      if (Platform.OS !== 'android') {
+        console.warn('Health Connect yalnızca Android platformunda desteklenir.');
+        return false;
+      }
+  
+      const isInstalled = await this.isInstalled();
+      if (!isInstalled) {
+        console.warn('Health Connect uygulaması yüklü değil.');
+        return false;
+      }
+  
+      const permissions = [
+        'ActiveCaloriesBurnedRecord',
+        'StepCountRecord',
+        'HeartRateRecord',
+        'OxygenSaturationRecord',
+        'SleepSessionRecord',
+        'SleepStageRecord',
+        'BasalMetabolicRateRecord',
+        'TotalCaloriesBurnedRecord',
+        'CaloriesBurnedRecord',
+        'Energy',
+        'EnergyBurned',
+        'KCalories',
+        'ExerciseCalories'
+      ];
+  
+      // İzin isteme işlemi
+      const granted = await HealthConnectImpl.requestPermissions({
+        permissions,
+        accessType: 'read',
+      });
+  
+      // Tüm izinlerin verilip verilmediğini kontrol et
+      const allGranted = permissions.every(p => granted.grantedPermissions.includes(p));
+  
+      // İzin durumu güncelleniyor
+      this.permissionsGranted = allGranted;
+      this.permissionRequested = true;
+  
+      console.log('İzinler verildi mi?', allGranted);
+      return allGranted;
+    } catch (error) {
+      console.error('Health Connect izin isteme hatası:', error);
+      return false;
+    }
+  }
+  
+  
+
+  static async openHealthConnectApp(): Promise<void> {
+    try {
+      if (!HealthConnectImpl?.openHealthConnectSettings) {
+        console.log('openHealthConnectSettings fonksiyonu bulunamadı');
+        return;
+      }
+
+      await HealthConnectImpl.openHealthConnectSettings();
+    } catch (error) {
+      console.error('Health Connect ayarları açma hatası:', error);
+    }
+  }
+  static async getSleepData(startDateStr: string, endDateStr: string): Promise<SleepMetric | null> {
+    if (Platform.OS !== 'android') {
+      console.log('Health Connect sadece Android platformunda desteklenir');
+      return this.getEmptyData('sleep');
+    }
+  
+    try {
+      console.log('Uyku verileri alınmaya çalışılıyor...');
+      
+      // Tarih aralığını doğru şekilde parçala
+      const startTime = new Date(startDateStr);
+      const endTime = new Date(endDateStr);
+      
+      // Aynı gün içinde olduğundan emin olma kontrolü
+      const startDay = startTime.toISOString().split('T')[0];
+      const endDay = endTime.toISOString().split('T')[0];
+      
+      console.log(`Uyku sorgusu tarih aralığı: ${startDay} - ${endDay}`);
+      
+      // Farklı uyku kayıt türlerini dene
+      const sleepTypes = ['SleepSession', 'Sleep', 'SleepStage', 'SleepSegment'];
+      let sleepResponse = null;
+      
+      // Uyku türlerini dene
+      for (const type of sleepTypes) {
+        console.log(`${type} türü deneniyor...`);
+        const response = await this.readHealthConnectRecords(type, startDateStr, endDateStr);
+        if (response) {
+          console.log(`${type} verisi bulundu`);
+          sleepResponse = response;
+          break;
         }
       }
       
-      // Hata durumunda sahte veri döndür
-      const values = [45, 47, 40, 50, 48, 46, 45];
-      const now = new Date();
-      const times = values.map((_, i) => new Date(now.getTime() - i * 60 * 60 * 1000).toISOString());
-      return {
-        values,
-        times, 
-        average: 45,
-      };
-    }
-  }
-
-  /**
-   * HRV verilerinden stres seviyesi hesaplar
-   * @param hrvValue HRV değeri (ms cinsinden)
-   * @returns Stres seviyesi (0-100 arası)
-   */
-  static calculateStressFromHRV(hrvValue: number): number {
-    // HRV değeri yüksekse stres düşük, düşükse stres yüksek
-    // Bu basit bir fonksiyon, gerçek hayatta daha karmaşık algoritmalar kullanılmalı
-    
-    if (hrvValue <= 20) return 80; // Çok düşük HRV = Çok yüksek stres
-    if (hrvValue <= 35) return 65; // Düşük HRV = Yüksek stres
-    if (hrvValue <= 50) return 50; // Orta HRV = Orta stres
-    if (hrvValue <= 65) return 35; // İyi HRV = Düşük stres
-    return 20; // Yüksek HRV = Çok düşük stres
-  }
-
-  /**
-   * Health Connect'ten verilen izinleri alır
-   * @returns Verilen izinlerin listesi
-   */
-  static async getPermissions(): Promise<string[]> {
-    try {
-      if (!HealthConnectImpl || typeof HealthConnectImpl.getGrantedPermissions !== 'function') {
-        console.log('getGrantedPermissions fonksiyonu bulunamadı, boş dizi döndürülüyor');
-        return [];
+      if (!sleepResponse) {
+        console.log('Uyku verisi bulunamadı, boş veri döndürülüyor');
+        return this.getEmptyData('sleep');
       }
+  
+      console.log('Uyku verisi yanıtı alındı');
+      const sleepRecords = this.parseHealthConnectResponse<HealthRecord>(sleepResponse);
+      console.log('Uyku kayıt sayısı:', sleepRecords.length);
       
-      // API'den verilen izinleri al
-      const grantedPermissions = await HealthConnectImpl.getGrantedPermissions();
+      // Sadece sorgu tarih aralığındaki uyku oturumlarını filtrele
+      const filteredSleepRecords = sleepRecords.filter(session => {
+        // startTime ve endTime kontrolü
+        if (!session.startTime || !session.endTime) return false;
+        
+        const sessionStart = new Date(session.startTime);
+        const sessionEnd = new Date(session.endTime);
+        
+        // Tarih aralığı içinde olup olmadığını kontrol et
+        const isInRange = sessionStart >= startTime && sessionEnd <= endTime;
+        
+        // Uzun uyku oturumlarını filtrele (24 saatten uzun olanları dışla)
+        const durationHours = (sessionEnd.getTime() - sessionStart.getTime()) / (1000 * 60 * 60);
+        const isReasonableDuration = durationHours <= 14; // Maksimum 14 saat uyku kabul edilebilir
+        
+        console.log(`Uyku oturumu: ${session.startTime} - ${session.endTime}, süre: ${durationHours} saat, aralıkta mı: ${isInRange}, makul süre mi: ${isReasonableDuration}`);
+        
+        return isInRange && isReasonableDuration;
+      });
       
-      // Null kontrolü
-      if (!grantedPermissions) {
-        console.log('Hiç izin verilmemiş (null yanıt)');
-        return [];
-      }
+      console.log(`Filtreleme sonrası kalan uyku oturumu sayısı: ${filteredSleepRecords.length}`);
       
-      console.log('Verilen izinler (API yanıtı):', grantedPermissions);
+      // Bundan sonraki kodlar aynı şekilde hesaplamayı yapar
+      let totalSleepMinutes = 0;
+      let totalDeepMinutes = 0;
+      let totalLightMinutes = 0;
+      let totalRemMinutes = 0;
+      let totalAwakeMinutes = 0;
+      let stages: { stage: string; startTime: string; endTime: string; durationMinutes: number }[] = [];
       
-      // Farklı API yanıt formatlarını standartlaştır
-      if (Array.isArray(grantedPermissions)) {
-        if (grantedPermissions.length > 0) {
-          if (typeof grantedPermissions[0] === 'object') {
-            // { recordType: 'Steps', accessType: 'read' } formatı
-            return grantedPermissions.map(item => {
-              if (item && typeof item === 'object') {
-                if ('recordType' in item && 'accessType' in item) {
-                  return `${item.accessType}_${item.recordType}`;
-                } else {
-                  return JSON.stringify(item);
+      // Başlangıç ve bitiş zamanlarını belirleme
+      let earliestStart = '';
+      let latestEnd = '';
+  
+      filteredSleepRecords.forEach(session => {
+        console.log('İşlenen uyku oturumu:', session);
+        
+        const startTime = session.startTime;
+        const endTime = session.endTime;
+        
+        if (startTime && endTime) {
+          // İlk oturum veya daha erken bir başlangıç ise
+          if (!earliestStart || startTime < earliestStart) {
+            earliestStart = startTime;
+          }
+          
+          // İlk oturum veya daha geç bir bitiş ise
+          if (!latestEnd || endTime > latestEnd) {
+            latestEnd = endTime;
+          }
+          
+          // Oturum süresini hesapla (dakika cinsinden)
+          const startDate = new Date(startTime);
+          const endDate = new Date(endTime);
+          const durationMinutes = (endDate.getTime() - startDate.getTime()) / (1000 * 60);
+          
+          // Mantıklı bir süre mi kontrol et (24 saatten az)
+          if (durationMinutes > 0 && durationMinutes < 24 * 60) {
+            totalSleepMinutes += durationMinutes;
+            // Başlangıçta tüm uyku light sayılır, aşamalar sonra düzeltilir
+            totalLightMinutes += durationMinutes;
+          } else {
+            console.log(`Geçersiz uyku süresi (${durationMinutes} dakika), atlanıyor`);
+            return; // Bu oturumu atla
+          }
+  
+          // Eğer doğrudan stages alanı varsa
+          if (session.stages && Array.isArray(session.stages)) {
+            console.log('Uyku aşamaları bulundu, aşama sayısı:', session.stages.length);
+            
+            session.stages.forEach((stage: any) => {
+              if (stage.stage !== undefined && stage.startTime && stage.endTime) {
+                const mappedStage = this.mapSleepStage(stage.stage);
+                
+                const stageStartDate = new Date(stage.startTime);
+                const stageEndDate = new Date(stage.endTime);
+                
+                // Stage'in query aralığı içinde olup olmadığını kontrol et
+                if (stageStartDate >= startTime && stageEndDate <= endTime) {
+                  const stageDurationMinutes = (stageEndDate.getTime() - stageStartDate.getTime()) / (1000 * 60);
+                  
+                  // Geçerli süre kontrolü
+                  if (stageDurationMinutes <= 0 || stageDurationMinutes > 24 * 60) {
+                    console.log(`Geçersiz aşama süresi: ${stageDurationMinutes} dakika, atlanıyor`);
+                    return;
+                  }
+                  
+                  console.log(`Uyku aşaması: ${stage.stage} -> ${mappedStage}, süresi: ${stageDurationMinutes} dakika`);
+                  
+                  // Aşamaya göre süreleri topla
+                  switch (mappedStage) {
+                    case 'deep':
+                      totalDeepMinutes += stageDurationMinutes;
+                      totalLightMinutes -= stageDurationMinutes; // Varsayılan light'tan çıkar
+                      break;
+                    case 'rem':
+                      totalRemMinutes += stageDurationMinutes;
+                      totalLightMinutes -= stageDurationMinutes; // Varsayılan light'tan çıkar
+                      break;
+                    case 'awake':
+                      totalAwakeMinutes += stageDurationMinutes;
+                      totalLightMinutes -= stageDurationMinutes; // Varsayılan light'tan çıkar
+                      break;
+                  }
+                  
+                  // Aşama bilgisini ekle
+                  stages.push({
+                    stage: mappedStage,
+                    startTime: stage.startTime,
+                    endTime: stage.endTime,
+                    durationMinutes: stageDurationMinutes
+                  });
                 }
               }
-              return String(item);
             });
-          } else {
-            // String dizisi formatı
-            return grantedPermissions.map(perm => String(perm));
           }
         }
-      }
+      });
       
-      return [];
+      // Negatif değerler engellensin
+      totalLightMinutes = Math.max(0, totalLightMinutes);
+      
+      // Toplam uyku süresi makul bir aralıkta mı kontrol et (2-14 saat)
+      if (totalSleepMinutes > 14 * 60) {
+        console.log(`Çok uzun uyku süresi tespit edildi: ${totalSleepMinutes} dakika, makul sınıra çekildi`);
+        totalSleepMinutes = 14 * 60; // Maksimum 14 saat
+      }
+  
+      console.log(`Uyku metrikleri: Toplam=${totalSleepMinutes}, Derin=${totalDeepMinutes}, Hafif=${totalLightMinutes}, REM=${totalRemMinutes}, Uyanık=${totalAwakeMinutes}`);
+      
+      // Zaman noktası oluştur
+      const now = new Date().toISOString();
+  
+      // Verileri döndür
+      const sleepMetric: SleepMetric = {
+        status: totalSleepMinutes > 360 ? 'good' : totalSleepMinutes > 300 ? 'warning' : 'bad',
+        values: [totalSleepMinutes],
+        times: [now],
+        lastUpdated: now,
+        duration: totalSleepMinutes,
+        efficiency: totalSleepMinutes > 0 ? (totalSleepMinutes - totalAwakeMinutes) / totalSleepMinutes * 100 : 0,
+        deep: totalDeepMinutes,
+        light: totalLightMinutes,
+        rem: totalRemMinutes,
+        awake: totalAwakeMinutes,
+        startTime: earliestStart,
+        endTime: latestEnd,
+        totalMinutes: totalSleepMinutes,
+        stages: stages.map(s => ({
+          stage: s.stage as 'deep' | 'light' | 'rem' | 'awake',
+          startTime: s.startTime,
+          endTime: s.endTime
+        }))
+      };
+      
+      return sleepMetric;
     } catch (error) {
-      console.error('İzinleri alırken hata oluştu:', error);
-      return [];
+      console.error('Uyku verisi alınırken hata:', error);
+      return this.getEmptyData('sleep');
     }
   }
+  
+  
 
-  static getProcessedDistance(distanceInMeters: number): { value: number, unit: string } {
-    if (distanceInMeters < 1000) {
-      return {
-        value: Math.round(distanceInMeters),
-        unit: 'm'
-      };
-    } else {
-      return {
-        value: parseFloat((distanceInMeters / 1000).toFixed(2)),
-        unit: 'km'
-      };
+  private static mapSleepStage(stageValue: number | string): string {
+    // Xiaomi uyku aşamaları için özel eşleme
+    if (stageValue === 4 || stageValue === 'LIGHT' || stageValue === '4') return 'light';
+    if (stageValue === 7 || stageValue === 'AWAKE' || stageValue === '7') return 'awake';
+    if (stageValue === 5 || stageValue === 'DEEP' || stageValue === '5') return 'deep';
+    if (stageValue === 6 || stageValue === 'REM' || stageValue === '6') return 'rem';
+    
+    // Farklı cihazlar için diğer yaygın formatlar
+  if (typeof stageValue === 'string') {
+    const stageLower = stageValue.toLowerCase();
+    if (stageLower.includes('deep')) return 'deep';
+    if (stageLower.includes('light')) return 'light';
+    if (stageLower.includes('rem')) return 'rem';
+    if (stageLower.includes('awake') || stageLower.includes('wake')) return 'awake';
+  }
+    
+    console.warn('Bilinmeyen uyku aşaması:', stageValue);
+    return 'light'; // Bilinmeyeni hafif uykuya varsayılan olarak eşle
+  }
+
+  static async isInstalled(): Promise<boolean> {
+    try {
+      if (Platform.OS !== 'android') {
+        return false;
+      }
+      
+      // NativeModules.HealthConnect kontrolü
+      if (NativeModules?.HealthConnect) {
+        return true;
+      }
+      
+      // HealthConnectModule kontrolü
+      if (HealthConnect) {
+        return true;
+      }
+      
+      // Package Manager ile Health Connect paketini kontrol et
+      try {
+        const canOpenHealthConnectApp = await Linking.canOpenURL('package:com.google.android.apps.healthdata');
+        if (canOpenHealthConnectApp) {
+          return true;
+        }
+      } catch (e) {
+        console.log('Package kontrolü hatası:', e);
+      }
+      
+      return false;
+      } catch (error) {
+      console.error('Health Connect yükleme kontrolü hatası:', error);
+      return false;
     }
   }
 }

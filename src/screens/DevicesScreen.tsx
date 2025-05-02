@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,11 @@ import {
   ScrollView,
   SafeAreaView,
   StatusBar,
-  Platform
+  Platform,
+  Animated,
+  Easing
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -21,6 +23,44 @@ type DevicesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>
 const DevicesScreen = () => {
   const navigation = useNavigation<DevicesScreenNavigationProp>();
   const { devices } = useDevices();
+  
+  // Animasyon değerleri
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  
+  // Sayfa odaklandığında animasyonları başlat
+  useFocusEffect(
+    React.useCallback(() => {
+      // Paralel animasyonlar
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 600,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        })
+      ]).start();
+      
+      return () => {
+        // Sayfa odağını kaybettiğinde animasyonları sıfırla
+        fadeAnim.setValue(0);
+        slideAnim.setValue(50);
+        scaleAnim.setValue(0.9);
+      };
+    }, [])
+  );
 
   const gradientColors = [
     ['#1e3c72', '#2a5298'], // dark blue
@@ -39,7 +79,15 @@ const DevicesScreen = () => {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
       <View style={styles.container}>
-        <View style={styles.header}>
+        <Animated.View 
+          style={[
+            styles.header,
+            {
+              opacity: fadeAnim,
+              transform: [{translateY: slideAnim}]
+            }
+          ]}
+        >
           <Text style={styles.headerTitle}>Cihazlarım</Text>
           <TouchableOpacity 
             style={styles.addButton}
@@ -47,45 +95,63 @@ const DevicesScreen = () => {
           >
             <Ionicons name="add-circle-outline" size={24} color="#fff" />
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
         <ScrollView 
           style={styles.content}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.devicesGrid}>
-            {devices.map((device, index) => (
-              <TouchableOpacity
-                key={device.id}
-                style={styles.deviceCard}
-                onPress={() => navigation.navigate('DeviceDetail', { deviceId: device.deviceId })}
-              >
-                <LinearGradient
-                  colors={getGradientColors(index)}
-                  style={styles.deviceGradient}
+          <Animated.View 
+            style={{
+              opacity: fadeAnim,
+              transform: [{translateY: Animated.multiply(slideAnim, 1.2)}]
+            }}
+          >
+            <View style={styles.devicesGrid}>
+              {devices.map((device, index) => (
+                <Animated.View
+                  key={device.id}
+                  style={{
+                    opacity: fadeAnim,
+                    transform: [{
+                      translateY: Animated.multiply(slideAnim, 1 + (index * 0.15))
+                    }, {
+                      scale: Animated.add(0.9, Animated.multiply(scaleAnim, 0.1))
+                    }]
+                  }}
                 >
-                  <View style={styles.deviceHeader}>
-                    <Ionicons 
-                      name={device.type === 'faunus' ? 'bed-outline' : 'watch-outline'} 
-                      size={24} 
-                      color="#fff" 
-                    />
-                    <View style={[
-                      styles.connectionStatus,
-                      device.connected ? styles.connected : styles.disconnected
-                    ]} />
-                  </View>
-                  <View style={styles.deviceInfo}>
-                    <Text style={styles.deviceName}>{device.name}</Text>
-                    <Text style={styles.deviceType}>
-                      {device.type === 'faunus' ? 'Faunus Cihazı' : 'Akıllı Saat'}
-                    </Text>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            ))}
-          </View>
+                  <TouchableOpacity
+                    style={styles.deviceCard}
+                    onPress={() => navigation.navigate('DeviceDetail', { deviceId: device.deviceId })}
+                  >
+                    <LinearGradient
+                      colors={getGradientColors(index)}
+                      style={styles.deviceGradient}
+                    >
+                      <View style={styles.deviceHeader}>
+                        <Ionicons 
+                          name={device.type === 'faunus' ? 'bed-outline' : 'watch-outline'} 
+                          size={24} 
+                          color="#fff" 
+                        />
+                        <View style={[
+                          styles.connectionStatus,
+                          device.connected ? styles.connected : styles.disconnected
+                        ]} />
+                      </View>
+                      <View style={styles.deviceInfo}>
+                        <Text style={styles.deviceName}>{device.name}</Text>
+                        <Text style={styles.deviceType}>
+                          {device.type === 'faunus' ? 'Faunus Cihazı' : 'Akıllı Saat'}
+                        </Text>
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
+              ))}
+            </View>
+          </Animated.View>
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -120,7 +186,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 20,
-    paddingBottom: Platform.select({ ios: 90, android: 70 }),
+    paddingBottom: Platform.select({ ios: 100, android: 80 }),
   },
   devicesGrid: {
     flexDirection: 'row',
@@ -128,25 +194,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   deviceCard: {
-    width: '48%',
+    width: Platform.OS === 'ios' ? '47%' : '48%',
     marginBottom: 15,
     borderRadius: 15,
     overflow: 'hidden',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+      },
+      android: {
+        elevation: 5,
+      },
+    }),
   },
   deviceGradient: {
-    padding: 15,
-    height: 140,
+    padding: Platform.OS === 'ios' ? 18 : 15,
+    height: Platform.OS === 'ios' ? 150 : 140,
+    width: '100%',
   },
   deviceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: Platform.OS === 'ios' ? 20 : 15,
   },
   connectionStatus: {
     width: 10,

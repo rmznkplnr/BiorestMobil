@@ -1,221 +1,253 @@
-import { createHealthData } from '../graphql/mutations';
-import awsconfig from '../aws-exports';
-import { Auth, API, graphqlOperation } from 'aws-amplify';
-
-export default class HealthDataService {
-  // AppSync ve Cognito yapılandırmasını kontrol etmek için yardımcı fonksiyon
-  public static async checkConfigAndAuth() {
-    try {
-      console.log('=== AWS Amplify Yapılandırma Kontrolü ===');
-      
-      // API yapılandırmasını kontrol et
-      console.log('AppSync Endpoint:', awsconfig.aws_appsync_graphqlEndpoint || 'TANIMLANMAMIŞ!');
-      console.log('AppSync Auth Type:', awsconfig.aws_appsync_authenticationType || 'TANIMLANMAMIŞ!');
-      
-      // Cognito yapılandırmasını kontrol et
-      console.log('Cognito User Pool ID:', awsconfig.aws_user_pools_id || 'TANIMLANMAMIŞ!');
-      console.log('Cognito Client ID:', awsconfig.aws_user_pools_web_client_id || 'TANIMLANMAMIŞ!');
-      
-      // Oturum durumunu kontrol et
-      try {
-        const session = await Auth.currentSession();
-        if (session) {
-          const idToken = session.getIdToken();
-          console.log('Oturum durumu: AÇIK (token var)');
-          if (idToken && idToken.payload) {
-            console.log('Kullanıcı:', idToken.payload.email || idToken.payload.username || idToken.payload.sub);
-            
-            // Token süresini kontrol et
-            const expiration = idToken.payload.exp || 0;
-            const now = Math.floor(Date.now() / 1000);
-            const remaining = expiration - now;
-            
-            if (remaining > 0) {
-              console.log(`Token geçerlilik: ${Math.floor(remaining / 60)} dakika kaldı`);
-            } else {
-              console.log('Token SÜRESİ DOLMUŞ!');
-            }
-          }
-        } else {
-          console.log('Oturum durumu: KAPALI (token yok)');
-        }
-      } catch (authError: any) {
-        console.log('Oturum kontrolü hatası:', authError.message);
-      }
-      
-      console.log('=== Kontrol Tamamlandı ===');
-    } catch (error: any) {
-      console.error('Yapılandırma kontrolü sırasında hata:', error.message);
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import HealthConnectService from './HealthConnectService';
+import HealthKitService from './HealthKitService';
+import { HealthData, mapHealthConnectData, mapHealthKitData } from '../types/health';
+import { Amplify } from 'aws-amplify';
+import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
+import { Platform } from 'react-native';
+import awsconfig from '../aws-exports'; 
+/**
+ * Verilen tarih için sağlık verilerini getirir
+ * @param date Sağlık verilerinin getirileceği tarih
+ * @returns Sağlık verileri
+ */
+export const fetchHealthDataForDate = async (date: Date): Promise<HealthData | null> => {
+  try {
+    const isAuthValid = await checkAuthAndConfig();
+    if (!isAuthValid) {
+      return getDefaultHealthData();
     }
-  }
 
-  // API isteği yapmadan önce Auth durumunu kontrol eden yardımcı metod
-  private static async checkAuthBeforeApiCall() {
-    const isAuthenticated = await this.isAuthReady();
-    if (!isAuthenticated) {
-      throw new Error('Kullanıcı kimlik doğrulaması yapılmadı. Lütfen giriş yapın.');
+    const formattedDate = format(date, 'yyyy-MM-dd');
+    console.log(`${formattedDate} tarihi için sağlık verileri çekiliyor`);
+
+    // Yerel saat dilimine göre gün başlangıcı ve bitişi oluştur
+    const startTime = new Date(date);
+    startTime.setHours(0, 0, 0, 0);
+    
+    const endTime = new Date(date);
+    endTime.setHours(23, 59, 59, 999);
+
+    console.log('Sağlık verileri tarih aralığı:', 
+               `${startTime.toLocaleString()} - ${endTime.toLocaleString()}`);
+
+    const startTimeStr = startTime.toISOString();
+    const endTimeStr = endTime.toISOString();
+
+    let healthData: HealthData | null = null;
+
+    if (Platform.OS === 'android') {
+      console.log('Android için Health Connect verisi isteniyor');
+      const healthConnectData = await HealthConnectService.getHealthData(startTimeStr, endTimeStr);
+      
+      if (healthConnectData) {
+        console.log('Health Connect verisi alındı:', JSON.stringify({
+          steps: healthConnectData.steps?.total || 0,
+          calories: healthConnectData.calories?.total || 0,
+          heartRate: healthConnectData.heartRate?.average || 0,
+          oxygen: healthConnectData.oxygen?.average || 0,
+          sleep: healthConnectData.sleep?.totalMinutes || 0
+        }));
+        
+        healthData = healthConnectData;
+      } else {
+        console.log('Health Connect verisi null döndü');
+
+      }
+    } else if (Platform.OS === 'ios') {
+      console.log('iOS için HealthKit verisi isteniyor');
+      const healthKitData = await HealthKitService.getHealthData(startTime, endTime);
+      
+      if (healthKitData) {
+        console.log('HealthKit verisi alındı');
+        healthData = mapHealthKitData(healthKitData);
+      } else {
+        console.log('HealthKit verisi null döndü');
+      }
+    } else {
+      console.warn('Desteklenmeyen platform:', Platform.OS);
     }
-    return true;
-  }
 
-  // Kimlik doğrulama durumunu kontrol et
-  public static async isAuthReady() {
+    if (!healthData) {
+      console.warn(`${formattedDate} için veri bulunamadı, varsayılan değer döndürülüyor`);
+      return getDefaultHealthData();
+    }
+
+    console.log('İşlenmiş sağlık verileri:', JSON.stringify({
+      steps: healthData.steps?.total || 0,
+      calories: healthData.calories?.total || 0,
+      heartRate: healthData.heartRate?.average || 0,
+      oxygen: healthData.oxygen?.average || 0,
+      sleep: healthData.sleep?.totalMinutes || 0
+    }));
+
+    return healthData;
+  } catch (error) {
+    console.error('Sağlık verisi çekilirken hata oluştu:', error);
+    return getDefaultHealthData();
+  }
+};
+
+/**
+ * Verilen tarih aralığı için sağlık verilerini getirir
+ * @param startDate Başlangıç tarihi
+ * @param endDate Bitiş tarihi
+ * @returns Sağlık verileri
+ */
+export const fetchHealthDataForRange = async (startDate: Date, endDate: Date): Promise<HealthData | null> => {
+  try {
+    const isAuthValid = await checkAuthAndConfig();
+    if (!isAuthValid) {
+      return getDefaultHealthData();
+    }
+
+    console.log(`${format(startDate, 'yyyy-MM-dd')} - ${format(endDate, 'yyyy-MM-dd')} aralığı için sağlık verileri çekiliyor`);
+
+    const startDateStr = startDate.toISOString();
+    const endDateStr = endDate.toISOString();
+
+    let healthData: HealthData | null = null;
+
+    if (Platform.OS === 'android') {
+      console.log('Android için aralık Health Connect verisi isteniyor');
+      const healthConnectData = await HealthConnectService.getHealthData(startDateStr, endDateStr);
+      
+      if (healthConnectData) {
+        console.log('Health Connect aralık verisi alındı:', JSON.stringify({
+          steps: healthConnectData.steps?.total || 0,
+          calories: healthConnectData.calories?.total || 0,
+          heartRate: healthConnectData.heartRate?.average || 0,
+          oxygen: healthConnectData.oxygen?.average || 0,
+          sleep: healthConnectData.sleep?.totalMinutes || 0
+        }));
+        
+        healthData = mapHealthConnectData(healthConnectData);
+      } else {
+        console.log('Health Connect aralık verisi null döndü');
+      }
+    } else if (Platform.OS === 'ios') {
+      console.log('iOS için HealthKit aralık verisi isteniyor');
+      const healthKitData = await HealthKitService.getHealthData(startDate, endDate);
+      
+      if (healthKitData) {
+        console.log('HealthKit aralık verisi alındı');
+        healthData = mapHealthKitData(healthKitData);
+      } else {
+        console.log('HealthKit aralık verisi null döndü');
+      }
+    } else {
+      console.warn('Desteklenmeyen platform:', Platform.OS);
+    }
+
+    if (!healthData) {
+      console.warn(`Belirtilen aralık için veri bulunamadı, varsayılan değer döndürülüyor`);
+      return getDefaultHealthData();
+    }
+
+    console.log('İşlenmiş aralık sağlık verileri:', JSON.stringify({
+      steps: healthData.steps?.total || 0,
+      calories: healthData.calories?.total || 0,
+      heartRate: healthData.heartRate?.average || 0,
+      oxygen: healthData.oxygen?.average || 0,
+      sleep: healthData.sleep?.totalMinutes || 0
+    }));
+
+    return healthData;
+  } catch (error) {
+    console.error('Sağlık verisi çekilirken hata oluştu:', error);
+    return getDefaultHealthData();
+  }
+};
+
+// Günlük verileri çeker
+export const fetchDailyHealthData = async (date: Date): Promise<HealthData | null> => {
+  return fetchHealthDataForDate(date);
+};
+
+// Haftalık verileri çeker
+export const fetchWeeklyHealthData = async (date: Date): Promise<HealthData | null> => {
+  const weekStart = startOfWeek(date, { weekStartsOn: 1 }); // Pazartesi başlangıç
+  const weekEnd = endOfWeek(date, { weekStartsOn: 1 }); // Pazar bitiş
+  return fetchHealthDataForRange(weekStart, weekEnd);
+};
+
+// Aylık verileri çeker
+export const fetchMonthlyHealthData = async (date: Date): Promise<HealthData | null> => {
+  const monthStart = startOfMonth(date);
+  const monthEnd = endOfMonth(date);
+  return fetchHealthDataForRange(monthStart, monthEnd);
+};
+
+// Eğer veri yoksa dönecek varsayılan değerleri hazırlar
+const getDefaultHealthData = (): HealthData => {
+  const defaultMetric = {
+    values: [0],
+    times: [new Date().toISOString()],
+    lastUpdated: new Date().toISOString(),
+    status: 'good' as const,
+  };
+
+  return {
+    heartRate: { ...defaultMetric, average: 0, max: 0, min: 0 },
+    oxygen: { ...defaultMetric, average: 0, max: 0, min: 0 },
+    sleep: {
+      ...defaultMetric,
+      duration: 0,
+      efficiency: 0,
+      deep: 0,
+      light: 0,
+      rem: 0,
+      awake: 0,
+      startTime: new Date().toISOString(),
+      endTime: new Date().toISOString(),
+      stages: [],
+      totalMinutes: 0,
+    },
+    steps: { ...defaultMetric, total: 0},
+    calories: { ...defaultMetric, total: 0},
+  };
+};
+
+// Kullanıcı auth ve config kontrolü
+const checkAuthAndConfig = async () => {
+  try {
+    // Amplify.configure void bir değer döndürür, kontrol etmeye gerek yok
+    Amplify.configure(awsconfig);
+    
     try {
-      // Session token kontrolü - daha güvenilir
-      const session = await Auth.currentSession();
-      
-      // Session kontrolü
-      if (!session) {
-        console.log('Aktif oturum yok - session bulunamadı');
-        return false;
-      }
-      
-      // Token süresi dolmuş mu kontrol et
-      const idToken = session.getIdToken();
-      if (idToken) {
-        const expiration = idToken.payload?.exp || 0;
-        const now = Math.floor(Date.now() / 1000);
-        
-        if (expiration < now) {
-          console.log('Token süresi dolmuş');
-          return false;
-        }
-        
-        // Ek kontrol - currentAuthenticatedUser ile doğrula
-        try {
-          const currentUser = await Auth.currentAuthenticatedUser();
-          if (currentUser && currentUser.username) {
-            console.log('Geçerli kullanıcı doğrulandı:', currentUser.username);
-            return true;
-          }
-        } catch (userError) {
-          console.log('currentAuthenticatedUser hatası:', userError);
-          return false;
-        }
-        
-        console.log('Geçerli oturum bulundu');
-        return true;
-      }
-      
+      await getCurrentUser();
+      return true;
+    } catch {
+      console.warn('Kullanıcı giriş yapmamış');
       return false;
+    }
+  } catch (error) {
+    console.error('Auth kontrolü sırasında hata:', error);
+    return false;
+  }
+};
+
+// AWS config ve auth kontrolü
+export const checkConfigAndAuth = async (): Promise<boolean> => {
+  try {
+    try {
+      const user = await getCurrentUser();
+      console.log('Kimlik doğrulandı:', user.username);
+      return true;
     } catch (error) {
-      console.log('Oturum kontrol hatası:', error);
+      console.warn('Kimlik doğrulama hatası:', error);
       return false;
     }
+  } catch (error) {
+    console.warn('Kimlik doğrulama hatası:', error);
+    return false;
   }
+};
 
-  static async syncHealthData(data: {
-    heartRate: number | null;
-    oxygen: number | null;
-    sleep: number | null;
-    steps: number | null;
-    calories: number | null;
-  }, retryCount = 0) {
-    try {
-      // ÖNEMLİ: API çağrısından önce kimlik doğrulama kontrolü yap
-      console.log('Kimlik doğrulama kontrolü yapılıyor...');
-      await this.checkAuthBeforeApiCall();
-      console.log('Kimlik doğrulama başarılı, API çağrısı yapılabilir');
-      
-      // Kullanıcı kimliğini güvenli şekilde al
-      let userId;
-      try {
-        const user = await Auth.currentAuthenticatedUser();
-        userId = user.username;
-      } catch (userError: any) {
-        console.error('Kullanıcı bilgisi alınamadı:', userError.message);
-        
-        // Session token'dan kimlik bilgisini al (alternatif yöntem)
-        const session = await Auth.currentSession();
-        if (session && session.getIdToken().payload.sub) {
-          userId = session.getIdToken().payload.sub;
-          console.log('Token içinden kullanıcı ID alındı:', userId);
-        } else {
-          throw new Error('Kullanıcı kimliği alınamadı');
-        }
-      }
-      
-      if (!userId) {
-        throw new Error('Kullanıcı ID bulunamadı');
-      }
-      
-      // Şu anki zaman
-      const timestamp = new Date().toISOString();
-      
-      // GraphQL için veri yapısını oluştur
-      const healthData = {
-        userId: userId,
-        timestamp: timestamp,
-        heartRate: data.heartRate ? {
-          average: data.heartRate,
-          values: [],
-          times: [],
-          lastUpdated: timestamp,
-          status: "good"
-        } : null,
-        oxygen: data.oxygen ? {
-          average: data.oxygen,
-          values: [],
-          times: [],
-          lastUpdated: timestamp,
-          status: "good" 
-        } : null,
-        sleep: data.sleep ? {
-          deepSleep: data.sleep,
-          duration: 0,
-          efficiency: 0,
-          lastUpdated: timestamp
-        } : null,
-        steps: data.steps ? {
-          count: data.steps,
-          goal: 10000,
-          lastUpdated: timestamp
-        } : null,
-        calories: data.calories ? {
-          value: data.calories,
-          goal: 2000,
-          lastUpdated: timestamp
-        } : null
-      };
-      
-      console.log('Sağlık verisi senkronizasyonu başlatılıyor');
-      
-      // GraphQL API çağrısını yapma
-      try {
-        // Gen 1 Amplify API çağrısı - graphqlOperation ile
-        const result = await API.graphql(
-          graphqlOperation(createHealthData, { input: healthData })
-        ) as any;
-        
-        console.log('Sağlık verisi başarıyla kaydedildi:', result.data.createHealthData.id);
-        return result.data.createHealthData;
-      } catch (apiError: any) {
-        console.error('GraphQL sorgusu gönderilirken hata:', apiError);
-        console.error('GQL Hata mesajı:', apiError.message);
-        console.error('GQL Hata tipi:', apiError.name);
-        
-        // Eğer hata alındıysa ve henüz retry limitini aşmadıysak, bir gecikme ile tekrar deneyelim
-        if (retryCount < 3) {
-          const nextRetry = retryCount + 1;
-          const delay = 1000 * nextRetry; // Her denemede artan gecikme
-          
-          console.log(`API hatası oluştu, ${delay}ms sonra ${nextRetry}. deneme yapılacak...`);
-          
-          return new Promise(resolve => {
-            setTimeout(() => {
-              console.log(`${nextRetry}. deneme başlatılıyor...`);
-              resolve(this.syncHealthData(data, nextRetry));
-            }, delay);
-          });
-        }
-        
-        throw apiError;
-      }
-    } catch (error: any) {
-      console.error('Sağlık verilerini kaydederken hata:', error);
-      console.error('Hata mesajı:', error.message);
-      console.error('Hata tipi:', error.name);
-      throw error;
-    }
-  }
-} 
+const HealthDataService = {
+  fetchHealthDataForDate,
+  fetchHealthDataForRange,
+  checkConfigAndAuth,
+};
+
+export default HealthDataService;

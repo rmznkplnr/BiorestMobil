@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { RootStackParamList } from './src/navigation/types';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -14,8 +15,12 @@ import SleepDetailsScreen from './src/screens/SleepDetailsScreen';
 import { DeviceProvider } from './src/context/DeviceContext';
 import { Alert, Text, View, ActivityIndicator, StyleSheet } from 'react-native';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
 import awsconfig from './src/aws-exports';
-import { Auth, API, Hub, Amplify } from 'aws-amplify';
+import { Amplify } from 'aws-amplify';
+import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
+import { Hub } from 'aws-amplify/utils';
+
 
 // Amplify yapılandırması
 console.log('App.tsx: Amplify yapılandırması başlıyor');
@@ -33,7 +38,7 @@ const App = () => {
     // Auth durumu kontrol et
     const checkAuthStatus = async () => {
       try {
-        await Auth.currentAuthenticatedUser();
+        await getCurrentUser();
         console.log('Kullanıcı giriş yapmış');
         setIsAuthenticated(true);
       } catch (error) {
@@ -49,13 +54,13 @@ const App = () => {
       const { payload } = data;
       console.log('Auth event:', payload.event);
       
-      if (payload.event === 'signIn') {
+      if (payload.event === 'signedIn') {
         console.log('Kullanıcı giriş yaptı');
         setIsAuthenticated(true);
-      } else if (payload.event === 'signOut') {
+      } else if (payload.event === 'signedOut') {
         console.log('Kullanıcı çıkış yaptı');
         setIsAuthenticated(false);
-      } else if (payload.event === 'signIn_failure') {
+      } else if (payload.event === 'signInWithRedirect_failure') {
         console.log('Giriş başarısız oldu:', payload);
         
         // Basit hata mesajı
@@ -91,28 +96,31 @@ const App = () => {
   }
 
   return (
-    <SafeAreaProvider>
-      <DeviceProvider>
-        <NavigationContainer>
-          <Stack.Navigator
-            initialRouteName="Auth"
-            screenOptions={{
-              headerShown: false,
-            }}
-          >
-            <Stack.Screen name="Auth" component={LoginScreen} />
-            <Stack.Screen name="Register" component={RegisterScreen} />
-            <Stack.Screen name="ConfirmAccount" component={ConfirmAccountScreen} />
-            <Stack.Screen name="Main" component={TabNavigator} />
-            <Stack.Screen name="DeviceManagement" component={DeviceManagementScreen} />
-            <Stack.Screen name="DeviceDetail" component={DeviceDetailScreen} />
-            <Stack.Screen name="HealthData" component={HealthDataScreen} />
-            <Stack.Screen name="SleepDetails" component={SleepDetailsScreen} />
-            <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </DeviceProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <DeviceProvider>
+          <NavigationContainer>
+            <Stack.Navigator
+              initialRouteName="Auth"
+              screenOptions={{
+                headerShown: false,
+              }}
+            >
+              <Stack.Screen name="Auth" component={LoginScreen} />
+              <Stack.Screen name="Register" component={RegisterScreen} />
+              <Stack.Screen name="ConfirmAccount" component={ConfirmAccountScreen} />
+              <Stack.Screen name="Main" component={TabNavigator} />
+              <Stack.Screen name="DeviceManagement" component={DeviceManagementScreen} />
+              <Stack.Screen name="DeviceDetail" component={DeviceDetailScreen} />
+              <Stack.Screen name="HealthData" component={HealthDataScreen} />
+              <Stack.Screen name="SleepDetails" component={SleepDetailsScreen} />
+              <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+              <Stack.Screen name="Settings" component={SettingsScreen} />
+            </Stack.Navigator>
+          </NavigationContainer>
+        </DeviceProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 };
 

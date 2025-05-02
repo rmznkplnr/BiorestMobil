@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StyleSheet, Platform, TouchableOpacity, View, Text, Dimensions, Animated } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { Auth } from 'aws-amplify';
+import { getCurrentUser } from 'aws-amplify/auth';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import HomeScreen from '../screens/HomeScreen';
@@ -13,69 +13,71 @@ import HealthDataScreen from '../screens/HealthDataScreen';
 import StoreScreen from '../screens/StoreScreen';
 import { RootStackParamList } from './types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import theme from '../theme';
 
 type TabNavigatorNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const Tab = createBottomTabNavigator();
 
-// Screen height'ı alalım (uzun ekranlar için)
-const { height, width } = Dimensions.get('window');
-// Farklı ekranlar ve cihazlar için boyut ayarlamaları yapılsın
-const isTablet = width > 600;
-const isLargeDevice = height > 800;
+// Cihaza göre uyumlu boyutlar için
+const { width, height } = Dimensions.get('window');
+const isTablet = width > 768;
+const isLargeDevice = width >= 812 || height >= 812; // iPhone X ve üzeri
 
-// Özel Tab Bar Butonu Bileşeni
+// Tab Button Props tipi
+interface TabBarButtonProps {
+  focused: boolean;
+  iconName: string;
+  label: string;
+  onPress: () => void;
+  iconColor: string;
+  labelColor: string;
+}
+
+// TabBar düğmesi bileşeni
 const TabBarButton = ({ 
   focused, 
   iconName, 
   label, 
+  onPress, 
   iconColor, 
-  labelColor, 
-  onPress 
-}: { 
-  focused: boolean; 
-  iconName: string; 
-  label: string; 
-  iconColor: string; 
-  labelColor: string; 
-  onPress: () => void;
-}) => {
-  // Animasyon değerleri
+  labelColor 
+}: TabBarButtonProps) => {
+  // Animasyonlar için ref değerleri
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const translateYAnim = useRef(new Animated.Value(0)).current;
-  
+
+  // Düğme odaklandığında animasyon
   useEffect(() => {
     if (focused) {
-      // Odaklanıldığında animasyon
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1.1,
-          friction: 5,
+          friction: 8,
           tension: 40,
           useNativeDriver: true,
         }),
         Animated.spring(translateYAnim, {
-          toValue: -5,
-          friction: 5,
+          toValue: -4,
+          friction: 8,
           tension: 40,
           useNativeDriver: true,
-        })
+        }),
       ]).start();
     } else {
-      // Odaktan çıkıldığında animasyon
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1,
-          friction: 5,
+          friction: 8,
           tension: 40,
           useNativeDriver: true,
         }),
         Animated.spring(translateYAnim, {
           toValue: 0,
-          friction: 5,
+          friction: 8,
           tension: 40,
           useNativeDriver: true,
-        })
+        }),
       ]).start();
     }
   }, [focused, scaleAnim, translateYAnim]);
@@ -97,7 +99,11 @@ const TabBarButton = ({
           }
         ]}
       >
-        <Ionicons name={iconName} size={isTablet ? 26 : 22} color={iconColor} />
+        <Ionicons 
+          name={iconName} 
+          size={theme.metrics.iconSize.medium} 
+          color={iconColor} 
+        />
         <Animated.Text 
           style={[
             styles.tabLabel, 
@@ -105,7 +111,7 @@ const TabBarButton = ({
               color: labelColor,
               opacity: focused ? 1 : 0.7,
               marginTop: focused ? 4 : 3,
-              fontSize: focused ? (isTablet ? 14 : 12) : (isTablet ? 12 : 10),
+              fontSize: focused ? theme.metrics.fontSize.s : theme.metrics.fontSize.xs,
             }
           ]}
         >
@@ -116,80 +122,97 @@ const TabBarButton = ({
   );
 };
 
-// Özel Tab Bar Bileşeni
+// Özel TabBar bileşeni
 const CustomTabBar = ({ state, descriptors, navigation }: any) => {
   const insets = useSafeAreaInsets();
   
-  // Android için sabit bir minimum güvenli değer belirleyelim (emülatörler için)
-  const safeAndroidBottom = Platform.OS === 'android' 
-    ? Math.max(10, insets.bottom)  // En az 10px, insets doğru değilse bile
-    : 0;
+  // Sayfa geçişinde animasyonları tetiklemek için timer kullanın
+  const [renderTimer, setRenderTimer] = useState(0);
   
+  useEffect(() => {
+    // Sayfa değişimlerinde animasyonların tetiklenmesini sağla
+    const timer = setTimeout(() => {
+      setRenderTimer(prev => prev + 1);
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [state.index]);
+
   return (
     <View style={[
       styles.customTabBar, 
       { 
-        // Emülatör ve gerçek cihazlar için güvenli değer kullan
-        bottom: safeAndroidBottom,
-        height: Platform.OS === 'ios' 
-          ? (isLargeDevice ? 85 : 75) 
-          : (isTablet ? 70 : 60),
+        bottom: 0,
+        paddingBottom: insets.bottom,
       }
     ]}>
       <View style={styles.tabBarBackground} />
-      <View style={[
-        styles.tabButtonsRow,
-        {
-          paddingBottom: Platform.OS === 'ios' 
-            ? (isLargeDevice ? 30 : 20) 
-            : Math.max(10, insets.bottom / 2), // Emülatör için daha güvenli değer
-        }
-      ]}>
+      <View style={styles.tabButtonsRow}>
         {state.routes.map((route: any, index: number) => {
           const { options } = descriptors[route.key];
+          
+          const label = options.tabBarLabel || options.title || route.name;
           const focused = state.index === index;
           
-          // İkon ve renk bilgilerini belirle
-          let iconName = 'help-circle';
-          let iconColor = focused ? '#4a90e2' : 'rgba(255, 255, 255, 0.7)';
-          let labelColor = iconColor;
-          let label = '';
+          // İkon renklerini ve etiketleri belirleyin
+          const iconColor = focused ? theme.colors.primary.light : theme.colors.text.tertiary;
+          const labelColor = focused ? theme.colors.primary.light : theme.colors.text.tertiary;
           
+          // Mağaza butonu için özel stil
+          const isStoreButton = route.name === 'Store';
+
+          // sağlık butonu için özel still
+          const isHealthButton = route.name === 'HealthData';
+
+          
+          // Her sekme için doğru ikonu belirleyin
+          let iconName = '';
           if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
-            label = 'Ana Sayfa';
           } else if (route.name === 'Devices') {
             iconName = focused ? 'bluetooth' : 'bluetooth-outline';
-            label = 'Cihazlar';
-          } else if (route.name === 'Health') {
+          } else if (route.name === 'HealthData') {
             iconName = focused ? 'heart' : 'heart-outline';
-            iconColor = focused ? '#ff3b30' : 'rgba(255, 59, 48, 0.7)';
-            labelColor = iconColor;
-            label = 'Sağlık';
           } else if (route.name === 'Store') {
             iconName = focused ? 'cart' : 'cart-outline';
-            iconColor = focused ? '#4cd964' : 'rgba(76, 217, 100, 0.7)';
-            labelColor = iconColor;
-            label = 'Mağaza';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
-            label = 'Profil';
           }
           
-          // Tab butonun tıklama işlevi
+          // Sekmye dokunulduğunda gerçekleşecek işlev
           const onPress = () => {
             const event = navigation.emit({
               type: 'tabPress',
               target: route.key,
               canPreventDefault: true,
             });
-
+            
             if (!focused && !event.defaultPrevented) {
               navigation.navigate(route.name);
             }
           };
 
-          return (
+          return isStoreButton ? (
+            <TabBarButton
+              key={route.key}
+              focused={focused}
+              iconName={iconName}
+              label={label}
+              iconColor={focused ? '#059669' : 'rgba(55, 168, 18, 0.7)'}
+              labelColor={focused ? '#059669' : 'rgba(55, 168, 18, 0.7)'}
+              onPress={onPress}
+            />
+          ) : isHealthButton ? (
+            <TabBarButton
+              key={route.key}
+              focused={focused}
+              iconName={iconName}
+              label={label}
+              iconColor={focused ? '#dc2626' : 'rgba(239, 68, 68, 0.7)'} 
+              labelColor={focused ? '#dc2626' : 'rgba(239, 68, 68, 0.7)'}
+              onPress={onPress}
+            />
+          ) : (
             <TabBarButton
               key={route.key}
               focused={focused}
@@ -206,6 +229,7 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
   );
 };
 
+// Ana TabNavigator bileşeni
 const TabNavigator = () => {
   const navigation = useNavigation<TabNavigatorNavigationProp>();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -216,7 +240,7 @@ const TabNavigator = () => {
       setIsCheckingAuth(true);
       try {
         // Kullanıcı giriş yapmış mı kontrol et
-        const user = await Auth.currentAuthenticatedUser();
+        const user = await getCurrentUser();
         console.log('TabNavigator: Kullanıcı giriş yapmış', user.username);
       } catch (error) {
         // Eğer kullanıcı giriş yapmamışsa, giriş sayfasına yönlendir
@@ -245,7 +269,7 @@ const TabNavigator = () => {
     React.useCallback(() => {
       const checkAuthOnFocus = async () => {
         try {
-          await Auth.currentAuthenticatedUser();
+          await getCurrentUser();
           console.log('TabNavigator Focus: Kullanıcı giriş yapmış');
         } catch (error) {
           console.log('TabNavigator Focus: Kullanıcı giriş yapmamış, giriş sayfasına yönlendiriliyor');
@@ -266,34 +290,30 @@ const TabNavigator = () => {
 
   return (
     <Tab.Navigator
-      tabBar={props => <CustomTabBar {...props} />}
+      initialRouteName="Home"
       screenOptions={{
         headerShown: false,
-        tabBarShowLabel: true,
+        tabBarStyle: { display: 'none' },
       }}
+      tabBar={(props) => <CustomTabBar {...props} />}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Devices" component={DevicesScreen} />
-      <Tab.Screen name="Health" component={HealthDataScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
-      <Tab.Screen name="Store" component={StoreScreen} />
+      <Tab.Screen name="HealthData" component={HealthDataScreen} options={{ title: 'Sağlık' }} />
+      <Tab.Screen name="Store" component={StoreScreen} options={{ title: 'Mağaza' }} />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profil' }} />
     </Tab.Navigator>
   );
 };
 
+// Stil tanımları
 const styles = StyleSheet.create({
   customTabBar: {
     position: 'absolute',
     left: 0,
     right: 0,
-    height: Platform.OS === 'ios' 
-      ? (isLargeDevice ? 85 : 75) 
-      : (isTablet ? 70 : 60),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 10,
+    height: theme.metrics.tabBarHeight,
+    ...theme.shadow('medium'),
     zIndex: 8,
   },
   tabBarBackground: {
@@ -324,8 +344,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  storeTabIconContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    elevation: 8,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
   tabLabel: {
     fontWeight: '600',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  storeTabLabel: {
+    fontWeight: 'bold',
     textAlign: 'center',
     includeFontPadding: false,
   },

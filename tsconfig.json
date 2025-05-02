@@ -3,7 +3,7 @@
   "compilerOptions": {
     "target": "esnext",
     "module": "Node16",
-    "lib": ["es2018", "dom"],
+    "lib": ["es2018", "dom","ES2020"],
     "allowJs": true,
     "jsx": "react-native",
     "noEmit": true,
@@ -26,4 +26,5 @@
     "metro.config.js",
     "jest.config.js"
   ]
+
 }

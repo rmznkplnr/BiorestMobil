@@ -1,11 +1,18 @@
-const {getDefaultConfig, mergeConfig} = require('@react-native/metro-config');
+const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+const path = require('path');
 
-/**
- * Metro configuration
- * https://reactnative.dev/docs/metro
- *
- * @type {import('@react-native/metro-config').MetroConfig}
- */
-const config = {};
+const defaultConfig = getDefaultConfig(__dirname);
 
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+// `extraNodeModules` ile eksik modülleri tanıtıyoruz
+defaultConfig.resolver.extraNodeModules = {
+  ...defaultConfig.resolver.extraNodeModules,
+  buffer: require.resolve('buffer/'),
+};
+
+const config = {
+  resolver: {
+    extraNodeModules: defaultConfig.resolver.extraNodeModules,
+  },
+};
+
+module.exports = mergeConfig(defaultConfig, config);

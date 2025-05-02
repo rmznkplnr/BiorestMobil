@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,15 @@ import {
   Platform,
   Image,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Animated,
+  Easing
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { Auth } from 'aws-amplify';
+import { getCurrentUser, signOut, fetchUserAttributes } from 'aws-amplify/auth';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -25,6 +27,44 @@ const ProfileScreen = () => {
   const [loading, setLoading] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const [loadingUserData, setLoadingUserData] = useState(true);
+  
+  // Animasyon değerleri
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  
+  // Sayfa odaklandığında animasyonları başlat
+  useFocusEffect(
+    React.useCallback(() => {
+      // Paralel animasyonlar
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 600,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        })
+      ]).start();
+      
+      return () => {
+        // Sayfa odağını kaybettiğinde animasyonları sıfırla
+        fadeAnim.setValue(0);
+        slideAnim.setValue(50);
+        scaleAnim.setValue(0.9);
+      };
+    }, [])
+  );
 
   // Kullanıcı bilgilerini AWS Cognito'dan al
   useEffect(() => {
@@ -34,18 +74,12 @@ const ProfileScreen = () => {
   const fetchUserData = async () => {
     try {
       setLoadingUserData(true);
-      const user = await Auth.currentAuthenticatedUser();
+      const user = await getCurrentUser();
       console.log('Kullanıcı bilgileri:', user);
       
       try {
         // Kullanıcı özelliklerini al
-        const userAttributes = await Auth.userAttributes(user);
-        const attributes: Record<string, string> = {};
-        
-        // Öznitelikleri eşleştir
-        userAttributes.forEach(attribute => {
-          attributes[attribute.Name] = attribute.Value;
-        });
+        const attributes = await fetchUserAttributes();
         
         setUserData({
           username: user.username,
@@ -80,7 +114,7 @@ const ProfileScreen = () => {
       setLoading(true);
       
       // AWS Cognito çıkış işlemi
-      await Auth.signOut();
+      await signOut();
       console.log('Başarıyla çıkış yapıldı');
       
       // Giriş ekranına yönlendir
@@ -112,9 +146,17 @@ const ProfileScreen = () => {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
       <View style={styles.container}>
-        <View style={styles.header}>
+        <Animated.View 
+          style={[
+            styles.header,
+            {
+              opacity: fadeAnim,
+              transform: [{translateY: slideAnim}]
+            }
+          ]}
+        >
           <Text style={styles.headerTitle}>Profil</Text>
-        </View>
+        </Animated.View>
 
         <ScrollView 
           style={styles.content}
@@ -122,72 +164,93 @@ const ProfileScreen = () => {
           showsVerticalScrollIndicator={false}
         >
           {/* Profil Bilgileri */}
-          <View style={styles.profileSection}>
-            <View style={styles.avatarContainer}>
-              <Image
-                source={require('../assets/avatar.png')}
-                style={styles.avatar}
-              />
-              <TouchableOpacity style={styles.editAvatarButton}>
-                <Ionicons name="camera" size={20} color="#fff" />
-              </TouchableOpacity>
+          <Animated.View
+            style={{
+              opacity: fadeAnim,
+              transform: [{translateY: Animated.multiply(slideAnim, 1.2)}, {scale: scaleAnim}]
+            }}
+          >
+            <View style={styles.profileSection}>
+              <View style={styles.avatarContainer}>
+                <Image
+                  source={require('../assets/avatar.png')}
+                  style={styles.avatar}
+                />
+                <TouchableOpacity style={styles.editAvatarButton}>
+                  <Ionicons name="camera" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.userName}>{userData?.name || 'Kullanıcı'}</Text>
+              <Text style={styles.userEmail}>{userData?.email || 'kullanici@example.com'}</Text>
             </View>
-            <Text style={styles.userName}>{userData?.name || 'Kullanıcı'}</Text>
-            <Text style={styles.userEmail}>{userData?.email || 'kullanici@example.com'}</Text>
-          </View>
+          </Animated.View>
 
           {/* Ayarlar Menüsü */}
-          <View style={styles.settingsSection}>
-            <Text style={styles.sectionTitle}>Ayarlar</Text>
-            
-            <TouchableOpacity style={styles.menuItem}>
-              <View style={styles.menuItemLeft}>
-                <Ionicons name="person-outline" size={24} color="#4a90e2" />
-                <Text style={styles.menuItemText}>Hesap Bilgileri</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color="#666" />
-            </TouchableOpacity>
+          <Animated.View
+            style={{
+              opacity: fadeAnim,
+              transform: [{translateY: Animated.multiply(slideAnim, 1.5)}]
+            }}
+          >
+            <View style={styles.settingsSection}>
+              <Text style={styles.sectionTitle}>Ayarlar</Text>
+              
+              <TouchableOpacity style={styles.menuItem}>
+                <View style={styles.menuItemLeft}>
+                  <Ionicons name="person-outline" size={24} color="#4a90e2" />
+                  <Text style={styles.menuItemText}>Hesap Bilgileri</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#666" />
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
-              <View style={styles.menuItemLeft}>
-                <Ionicons name="notifications-outline" size={24} color="#4a90e2" />
-                <Text style={styles.menuItemText}>Bildirimler</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color="#666" />
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem}>
+                <View style={styles.menuItemLeft}>
+                  <Ionicons name="notifications-outline" size={24} color="#4a90e2" />
+                  <Text style={styles.menuItemText}>Bildirimler</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#666" />
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
-              <View style={styles.menuItemLeft}>
-                <Ionicons name="lock-closed-outline" size={24} color="#4a90e2" />
-                <Text style={styles.menuItemText}>Gizlilik</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color="#666" />
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem}>
+                <View style={styles.menuItemLeft}>
+                  <Ionicons name="lock-closed-outline" size={24} color="#4a90e2" />
+                  <Text style={styles.menuItemText}>Gizlilik</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#666" />
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
-              <View style={styles.menuItemLeft}>
-                <Ionicons name="help-circle-outline" size={24} color="#4a90e2" />
-                <Text style={styles.menuItemText}>Yardım</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color="#666" />
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity style={styles.menuItem}>
+                <View style={styles.menuItemLeft}>
+                  <Ionicons name="help-circle-outline" size={24} color="#4a90e2" />
+                  <Text style={styles.menuItemText}>Yardım</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
 
           {/* Çıkış Butonu */}
-          <TouchableOpacity 
-            style={styles.logoutButton}
-            onPress={handleLogout}
-            disabled={loading}
+          <Animated.View
+            style={{
+              opacity: fadeAnim,
+              transform: [{translateY: Animated.multiply(slideAnim, 1.8)}]
+            }}
           >
-            {loading ? (
-              <ActivityIndicator color="#e74c3c" />
-            ) : (
-              <>
-                <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
-                <Text style={styles.logoutText}>Çıkış Yap</Text>
-              </>
-            )}
-          </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.logoutButton}
+              onPress={handleLogout}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#e74c3c" />
+              ) : (
+                <>
+                  <Ionicons name="log-out-outline" size={24} color="#e74c3c" />
+                  <Text style={styles.logoutText}>Çıkış Yap</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -221,7 +284,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 20,
-    paddingBottom: Platform.OS === 'android' ? 20 : 0,
+    paddingBottom: Platform.select({ ios: 100, android: 80 }),
   },
   loadingContainer: {
     flex: 1,
@@ -284,7 +347,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#1a1a1a',
-    padding: 15,
+    padding: Platform.OS === 'ios' ? 18 : 15,
     borderRadius: 15,
     marginBottom: 10,
   },
@@ -302,7 +365,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#1a1a1a',
-    padding: 15,
+    padding: Platform.OS === 'ios' ? 18 : 15,
     borderRadius: 15,
     marginBottom: 20,
   },

@@ -31,5 +31,13 @@ target 'BiorestMobil' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+        # RNVectorIcons fontları düzgün kopyalansın diye
+        installer.pods_project.targets.each do |target|
+          if target.name == 'RNVectorIcons'
+            target.build_configurations.each do |config|
+              config.build_settings['CONFIGURATION_BUILD_DIR'] = '$PODS_CONFIGURATION_BUILD_DIR'
+            end
+          end
+        end    
   end
 end

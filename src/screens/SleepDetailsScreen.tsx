@@ -16,9 +16,12 @@ import { LineChart } from 'react-native-chart-kit';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList, SleepNotification } from '../navigation/types';
+import { RootStackParamList } from '../navigation/types';
 import { RouteProp } from '@react-navigation/native';
 import Svg, { Path, Line } from 'react-native-svg';
+import { format, parseISO } from 'date-fns';
+import { tr } from 'date-fns/locale';
+import { SleepData } from '../types/sleepTypes';
 
 type SleepDetailsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -31,6 +34,34 @@ interface Props {
   navigation: SleepDetailsScreenNavigationProp;
   route: SleepDetailsScreenRouteProp;
 }
+
+/**
+ * Güvenli tarih ayrıştırma - geçersiz tarih formatları için hata önleme
+ */
+const safeDateParser = (dateString?: string, fallbackText: string = 'Bilinmiyor'): { date: Date | null, formatted: string } => {
+  if (!dateString) {
+    return { date: null, formatted: fallbackText };
+  }
+  
+  try {
+    // Doğrudan ISO string'i ayrıştırmayı dene
+    const parsedDate = new Date(dateString);
+    
+    // Geçerli bir tarih mi kontrol et
+    if (isNaN(parsedDate.getTime())) {
+      console.warn('Geçersiz tarih formatı:', dateString);
+      return { date: null, formatted: fallbackText };
+    }
+    
+    return { 
+      date: parsedDate, 
+      formatted: format(parsedDate, 'dd MMMM yyyy, HH:mm', { locale: tr }) 
+    };
+  } catch (error) {
+    console.error('Tarih ayrıştırma hatası:', error);
+    return { date: null, formatted: fallbackText };
+  }
+};
 
 const SleepDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
   const { sleepData } = route.params;
@@ -144,6 +175,14 @@ const SleepDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
     return stars;
   };
 
+  // Ortam faktörlerini güvenli bir şekilde almak için yardımcı fonksiyon
+  const getEnvironmentalFactor = (key: 'avgLight' | 'avgTemperature' | 'avgHumidity' | 'avgNoise'): string => {
+    if (sleepData.environmentalFactors && sleepData.environmentalFactors[key] !== undefined) {
+      return String(sleepData.environmentalFactors[key]);
+    }
+    return 'Normal';
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -181,23 +220,59 @@ const SleepDetailsScreen: React.FC<Props> = ({ navigation, route }) => {
                 <Text style={styles.infoTitle}>Uyku Özeti</Text>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Tarih:</Text>
-                  <Text style={styles.infoValue}>{sleepData.date}</Text>
+                  <Text style={styles.infoValue}>{sleepData.date || 'Bilinmiyor'}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Başlangıç:</Text>
+                  <Text style={styles.infoValue}>
+                    {safeDateParser(sleepData.startTime || '').formatted}
+                  </Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Bitiş:</Text>
+                  <Text style={styles.infoValue}>
+                    {safeDateParser(sleepData.endTime || '').formatted}
+                  </Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Süre:</Text>
-                  <Text style={styles.infoValue}>{sleepData.duration}</Text>
+                  <Text style={styles.infoValue}>{typeof sleepData.duration === 'number' ? 
+                    `${Math.floor(sleepData.duration / 60)} saat ${sleepData.duration % 60} dakika` : 
+                    String(sleepData.duration)}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Kalite:</Text>
+                  <Text style={styles.infoValue}>
+                    {sleepData.quality ? `${sleepData.quality}%` : 'Bilinmiyor'}
+                  </Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Derin Uyku:</Text>
+                  <Text style={styles.infoValue}>
+                    {sleepData.stages && sleepData.stages.deep ? `${sleepData.stages.deep} dk` : 'Bilinmiyor'}
+                  </Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>REM Uykusu:</Text>
+                  <Text style={styles.infoValue}>
+                    {sleepData.stages && sleepData.stages.rem ? `${sleepData.stages.rem} dk` : 'Bilinmiyor'}
+                  </Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Ortam Işığı:</Text>
-                  <Text style={styles.infoValue}>{sleepData.lightLevel}</Text>
+                  <Text style={styles.infoValue}>{getEnvironmentalFactor('avgLight')}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Ortam Sıcaklığı:</Text>
+                  <Text style={styles.infoValue}>{getEnvironmentalFactor('avgTemperature')}</Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Ortam Sesi:</Text>
-                  <Text style={styles.infoValue}>{sleepData.sound}</Text>
+                  <Text style={styles.infoValue}>{getEnvironmentalFactor('avgNoise')}</Text>
                 </View>
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Aroma:</Text>
-                  <Text style={styles.infoValue}>{sleepData.fragrance}</Text>
+                  <Text style={styles.infoLabel}>Nem:</Text>
+                  <Text style={styles.infoValue}>{getEnvironmentalFactor('avgHumidity')}</Text>
                 </View>
               </View>
 

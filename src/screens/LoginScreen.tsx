@@ -10,12 +10,19 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
-  Image
+  Image,
+  ScrollView
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { Auth } from 'aws-amplify';
+import { 
+  signIn, 
+  getCurrentUser, 
+  fetchAuthSession,
+  resetPassword,
+  confirmResetPassword 
+} from 'aws-amplify/auth';
 import { LinearGradient } from 'react-native-linear-gradient';
 
 // Logo importu
@@ -40,7 +47,7 @@ const LoginScreen = () => {
         setInitializing(true);
         
         // Zaten giriş yapmış bir kullanıcı var mı?
-        const user = await Auth.currentAuthenticatedUser();
+        const user = await getCurrentUser();
         console.log('Kullanıcı zaten giriş yapmış:', user.username);
         
         // Ana ekrana yönlendir
@@ -68,12 +75,15 @@ const LoginScreen = () => {
     try {
       console.log('Giriş yapılıyor:', { email });
       
-      // SRP Auth ile giriş - Gen 1 formatı
-      const user = await Auth.signIn(email, password);
+      // SRP Auth ile giriş - Gen 2 formatı
+      const { isSignedIn, nextStep } = await signIn({
+        username: email,
+        password
+      });
       
-      console.log('Giriş başarılı:', user);
+      console.log('Giriş başarılı:', isSignedIn);
       
-      if (user) {
+      if (isSignedIn) {
         // Ana ekrana git
         navigation.replace('Main');
       }
@@ -86,15 +96,15 @@ const LoginScreen = () => {
       let errorMessage = 'Giriş yapılırken bir hata oluştu';
       
       if (error) {
-        if (error.code === 'UserNotConfirmedException') {
+        if (error.name === 'UserNotConfirmedException') {
           errorMessage = 'Hesabınızı doğrulamanız gerekiyor';
           navigation.navigate('ConfirmAccount', { email });
           return;
-        } else if (error.code === 'NotAuthorizedException') {
+        } else if (error.name === 'NotAuthorizedException') {
           errorMessage = 'Geçersiz e-posta veya şifre';
-        } else if (error.code === 'UserNotFoundException') {
+        } else if (error.name === 'UserNotFoundException') {
           errorMessage = 'Bu e-posta adresi ile kayıtlı hesap bulunamadı';
-        } else if (error.code === 'NetworkError' || error.code === 'Network error') {
+        } else if (error.name === 'NetworkError' || error.name === 'Network error') {
           errorMessage = 'İnternet bağlantınızı kontrol edin (AWS sunucularına erişilemiyor)';
         } else {
           errorMessage = error.message || 'Bağlantı hatası, lütfen daha sonra tekrar deneyin';
@@ -128,7 +138,9 @@ const LoginScreen = () => {
     setError(null);
     
     try {
-      await Auth.forgotPassword(email);
+      await resetPassword({
+        username: email
+      });
       
       Alert.alert(
         'Şifre Sıfırlama',
@@ -155,10 +167,13 @@ const LoginScreen = () => {
     try {
       console.log('Manuel giriş yapılıyor:', { email });
       
-      // Gen 1 formatında signIn
-      const user = await Auth.signIn(email, password);
+      // Gen 2 formatında signIn
+      const { isSignedIn, nextStep } = await signIn({
+        username: email,
+        password
+      });
       
-      console.log('Manuel giriş başarılı:', user);
+      console.log('Manuel giriş başarılı:', isSignedIn);
       Alert.alert('Giriş Başarılı', 'Ana sayfaya yönlendiriliyorsunuz.');
       navigation.replace('Main');
     } catch (error: any) {
@@ -168,13 +183,13 @@ const LoginScreen = () => {
       console.log('Hata mesajı:', error?.message);
       
       let errorMessage = 'Giriş yapılırken bir hata oluştu';
-      if (error?.code === 'UserNotConfirmedException') {
+      if (error?.name === 'UserNotConfirmedException') {
         errorMessage = 'Hesabınızı doğrulamanız gerekiyor';
         navigation.navigate('ConfirmAccount', { email });
         return;
-      } else if (error?.code === 'NotAuthorizedException') {
+      } else if (error?.name === 'NotAuthorizedException') {
         errorMessage = 'Geçersiz e-posta veya şifre';
-      } else if (error?.code === 'UserNotFoundException') {
+      } else if (error?.name === 'UserNotFoundException') {
         errorMessage = 'Bu e-posta adresi ile kayıtlı hesap bulunamadı';
       } else if (error?.message) {
         errorMessage = error.message;
@@ -186,25 +201,7 @@ const LoginScreen = () => {
     }
   };
 
-  const handleOfflineLogin = () => {
-    setLoading(true);
-    setError(null);
-    
-    // 2 saniye gecikme ekle
-    setTimeout(() => {
-      setLoading(false);
-      Alert.alert(
-        'Test Girişi',
-        'Offline test modunda ana ekrana yönlendiriliyorsunuz.',
-        [
-          {
-            text: 'Tamam',
-            onPress: () => navigation.replace('Main')
-          }
-        ]
-      );
-    }, 2000);
-  };
+
 
   if (initializing) {
     return (
@@ -224,6 +221,7 @@ const LoginScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScrollView>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
       <LinearGradient
         colors={['#000000', '#121212', '#1e1e1e']}
@@ -307,14 +305,10 @@ const LoginScreen = () => {
         </View>
 
         <View style={styles.footer}>
-          <TouchableOpacity
-            style={styles.testButton}
-            onPress={handleOfflineLogin}
-          >
-            <Text style={styles.testButtonText}>Offline Test Girişi</Text>
-          </TouchableOpacity>
+
         </View>
       </LinearGradient>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -323,11 +317,13 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#000000',
+    
   },
   container: {
     flex: 1,
-    paddingHorizontal: 30,
+    
     justifyContent: 'center',
+    
   },
   content: {
     flex: 1,
@@ -336,18 +332,18 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 5,
     justifyContent: 'center',
   },
   logoImage: {
-    width: 150,
-    height: 150,
+    width: 250,
+    height: 200,
   },
   title: {
     fontSize: 36,
     fontWeight: 'bold',
     color: '#fff',
-    marginTop: 5,
+    marginTop: 0,
     marginLeft: 5,
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 1, height: 1 },
@@ -356,7 +352,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 18,
     color: '#ffffff',
-    marginBottom: 40,
+    marginBottom: 30,
     textAlign: 'center',
     opacity: 0.9,
     fontWeight: '500',
@@ -372,6 +368,7 @@ const styles = StyleSheet.create({
     elevation: 5,
     borderWidth: 1,
     borderColor: 'rgba(100, 100, 100, 0.3)',
+    
   },
   cardTitle: {
     fontSize: 26,

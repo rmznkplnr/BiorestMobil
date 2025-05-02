@@ -1,5 +1,5 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { SleepNotification as ImportedSleepNotification } from '../types/sleepTypes';
+import { SleepData, SleepNotification as ImportedSleepNotification } from '../types/sleepTypes';
 
 // Z-score hesaplama için tip tanımları
 export interface SleepMetrics {
@@ -34,6 +34,8 @@ export interface SleepMetrics {
     Auth: undefined;
     Register: undefined;
     ConfirmAccount: { email: string };
+    ForgotPassword: undefined;
+    ResetPassword: { email: string };
     
     // Main App Screens
     Main: undefined;
@@ -43,13 +45,16 @@ export interface SleepMetrics {
     DeviceDetail: { deviceId: string };
     
     // Sleep Screens
-    SleepDetails: { sleepData: SleepNotification };
+    SleepDetails: { sleepData: SleepData };
     
     // Health Screens
     HealthData: undefined;
 
     // Store Screens
     ProductDetail: { productId: string };
+
+    // Settings Screen
+    Settings: undefined;
   };
   
   export type AuthStackParamList = {
