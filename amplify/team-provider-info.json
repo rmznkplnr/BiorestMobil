@@ -1,0 +1,20 @@
+{
+  "main": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-biorestmobil-main-d7255-authRole",
+      "UnauthRoleArn": "arn:aws:iam::408488939127:role/amplify-biorestmobil-main-d7255-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::408488939127:role/amplify-biorestmobil-main-d7255-authRole",
+      "Region": "eu-central-1",
+      "DeploymentBucketName": "amplify-biorestmobil-main-d7255-deployment",
+      "UnauthRoleName": "amplify-biorestmobil-main-d7255-unauthRole",
+      "StackName": "amplify-biorestmobil-main-d7255",
+      "StackId": "arn:aws:cloudformation:eu-central-1:408488939127:stack/amplify-biorestmobil-main-d7255/0e389160-528d-11f0-a9a4-024091034385",
+      "AmplifyAppId": "d5b5j2ju0ab85"
+    },
+    "categories": {
+      "auth": {
+        "BiorestMobil": {}
+      }
+    }
+  }
+}

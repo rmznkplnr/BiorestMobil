@@ -1,0 +1,13 @@
+type HealthData @model @auth(rules: [{allow: public}]) {
+  id: ID!
+  userId: String!
+  oksijen: Int
+  nabiz: Int
+  topuykusuresi: Int
+  rem: Int
+  hafif: Int
+  adim: Int
+  kalori: Int
+  derin: Int
+}
+ 

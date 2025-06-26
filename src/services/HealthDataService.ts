@@ -8,6 +8,50 @@ import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
 import { Platform } from 'react-native';
 import awsconfig from '../aws-exports'; 
 /**
+ * Uyku verisi için basit tarih belirleme fonksiyonu
+ * Uyandığı saat hangi tarihse uyku verisi o tarihe kaydedilir
+ */
+const getSleepDataWithProperDate = async (targetDate: Date) => {
+  if (Platform.OS !== 'android') return null;
+
+  // 1 gün önceki akşam 18:00'dan hedef günün öğlen 14:00'ına kadar ara
+  const sleepSearchStart = new Date(targetDate);
+  sleepSearchStart.setDate(sleepSearchStart.getDate() - 1);
+  sleepSearchStart.setHours(18, 0, 0, 0); // Önceki gün akşam 18:00
+
+  const sleepSearchEnd = new Date(targetDate);
+  sleepSearchEnd.setHours(14, 0, 0, 0); // Hedef gün öğlen 14:00
+
+  console.log('🛌 Uyku verisi aralığı:', 
+             `${sleepSearchStart.toLocaleString()} - ${sleepSearchEnd.toLocaleString()}`);
+
+  const sleepData = await HealthConnectService.getSleepData(
+    sleepSearchStart.toISOString(), 
+    sleepSearchEnd.toISOString()
+  );
+
+  if (sleepData && sleepData.endTime) {
+    const sleepEndTime = new Date(sleepData.endTime);
+    const sleepEndDateStr = format(sleepEndTime, 'yyyy-MM-dd');
+    const targetDateStr = format(targetDate, 'yyyy-MM-dd');
+    
+    console.log(`🛌 Uyandığı tarih: ${sleepEndDateStr}, hedef tarih: ${targetDateStr}`);
+    
+    // Uyandığı tarih ile hedef tarih aynı ise bu uyku verisi kullanılır
+    if (sleepEndDateStr === targetDateStr) {
+      console.log('✅ Uyandığı tarih hedef tarihle eşleşiyor, uyku verisi kabul edildi');
+      return sleepData;
+    } else {
+      console.log('❌ Uyandığı tarih hedef tarihle eşleşmiyor, uyku verisi reddedildi');
+      return null;
+    }
+  }
+
+  console.log('🛌 Uyku verisi bulunamadı');
+  return null;
+};
+
+/**
  * Verilen tarih için sağlık verilerini getirir
  * @param date Sağlık verilerinin getirileceği tarih
  * @returns Sağlık verileri
@@ -50,15 +94,30 @@ export const fetchHealthDataForDate = async (date: Date): Promise<HealthData | n
           sleep: healthConnectData.sleep?.totalMinutes || 0
         }));
         
+        // 🛌 Uyku verisi için özel sorgulama yap
+        const properSleepData = await getSleepDataWithProperDate(date);
+        if (properSleepData) {
+          console.log('🛌 Özel uyku verisi bulundu:', {
+            totalMinutes: properSleepData.totalMinutes,
+            endTime: properSleepData.endTime
+          });
+          // Uyku verisini güncelle
+          healthConnectData.sleep = properSleepData;
+        }
+        
         healthData = healthConnectData;
 
         // 🔥 YENİ: Otomatik AWS senkronizasyonu
         try {
-          console.log('AWS otomatik senkronizasyonu başlatılıyor...');
-          await HealthDataSyncService.autoSync(healthData, date);
+          console.log('🔄 AWS senkronizasyonu başlatılıyor...');
+          const syncSuccess = await HealthDataSyncService.syncHealthData(healthData);
+          if (syncSuccess) {
+            console.log('✅ AWS senkronizasyonu başarılı');
+          } else {
+            console.log('❌ AWS senkronizasyonu başarısız');
+          }
         } catch (syncError) {
-          console.error('AWS senkronizasyon hatası (veri yine de gösterilecek):', syncError);
-          // Senkronizasyon hatası olsa bile veriyi kullanıcıya göster
+          console.error('❌ AWS senkronizasyon hatası:', syncError);
         }
 
       } else {
@@ -74,10 +133,15 @@ export const fetchHealthDataForDate = async (date: Date): Promise<HealthData | n
 
         // 🔥 YENİ: iOS için de otomatik AWS senkronizasyonu
         try {
-          console.log('AWS otomatik senkronizasyonu başlatılıyor (iOS)...');
-          await HealthDataSyncService.autoSync(healthData, date);
+          console.log('🔄 AWS senkronizasyonu başlatılıyor (iOS)...');
+          const syncSuccess = await HealthDataSyncService.syncHealthData(healthData);
+          if (syncSuccess) {
+            console.log('✅ AWS senkronizasyonu başarılı');
+          } else {
+            console.log('❌ AWS senkronizasyonu başarısız');
+          }
         } catch (syncError) {
-          console.error('AWS senkronizasyon hatası (veri yine de gösterilecek):', syncError);
+          console.error('❌ AWS senkronizasyon hatası:', syncError);
         }
 
       } else {

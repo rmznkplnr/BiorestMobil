@@ -1,7 +1,8 @@
 import { generateClient } from 'aws-amplify/api';
-import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
-import { HealthData } from '../types/health';
+import { getCurrentUser, fetchUserAttributes } from 'aws-amplify/auth';
+import { HealthData as LocalHealthData } from '../types/health';
 import { format } from 'date-fns';
+import { createHealthDataMutation, CreateHealthDataInput } from '../types/graphql';
 
 // GraphQL mutations - Basitleştirilmiş versiyonlar
 const createHealthData = /* GraphQL */ `
@@ -125,287 +126,85 @@ export interface HealthDataRecord {
   awakeMinutes?: number;
 }
 
-class HealthDataSyncService {
-  // API Key ile client
-  private static clientApiKey = generateClient({
-    authMode: 'apiKey'
-  });
+const client = generateClient();
+
+interface HealthDataSyncService {
+  syncHealthData: (data: LocalHealthData) => Promise<boolean>;
+  syncAllHealthData: (dataArray: LocalHealthData[]) => Promise<{ success: number; failed: number }>;
+}
+
+class HealthDataSyncServiceImpl implements HealthDataSyncService {
   
-  // IAM ile client
-  private static clientIAM = generateClient({
-    authMode: 'identityPool'
-  });
-
-  // User Pool ile client
-  private static clientUserPool = generateClient({
-    authMode: 'userPool'
-  });
-
-  // Farklı authentication mode'ları dene
-  private static async tryDifferentAuthModes(query: string, variables: any) {
-    const authModes = [
-      { client: this.clientUserPool, name: 'User Pool' },
-      { client: this.clientApiKey, name: 'API Key' },
-      { client: this.clientIAM, name: 'Identity Pool' }
-    ];
-
-    for (const { client, name } of authModes) {
-      try {
-        console.log(`${name} ile deneniyor...`);
-        const result = await client.graphql({ query, variables });
-        console.log(`${name} ile başarılı!`);
-        return result;
-      } catch (error) {
-        console.log(`${name} başarısız:`, error);
-      }
-    }
-
-    throw new Error('Tüm authentication mode\'ları başarısız');
-  }
-  
-  /**
-   * Kullanıcının sağlık verilerini AWS GraphQL API'ye kaydeder
-   */
-  static async saveHealthData(healthData: HealthData, date: Date): Promise<boolean> {
+  async syncHealthData(data: LocalHealthData): Promise<boolean> {
     try {
-      // Kullanıcı oturum kontrolü
-      const user = await getCurrentUser();
-      if (!user || !user.username) {
-        console.error('Kullanıcı oturum açmamış');
-        return false;
-      }
+      console.log('Sağlık verisi senkronize ediliyor:', data);
 
-      // Auth session kontrol
-      const session = await fetchAuthSession();
-      if (!session.tokens) {
-        console.error('Geçerli oturum bulunamadı');
-        return false;
-      }
-
-      const userId = user.username;
-      const dateStr = date.toISOString();
+      // Mevcut kullanıcıyı ve attribute'larını al
+      const currentUser = await getCurrentUser();
+      const userAttributes = await fetchUserAttributes();
       
-      console.log(`Sağlık verisi kaydediliyor - Kullanıcı: ${userId}, Tarih: ${format(date, 'yyyy-MM-dd')}`);
+      if (!currentUser || !userAttributes.email) {
+        console.error('❌ Kullanıcı giriş yapmamış veya email bilgisi yok, senkronizasyon iptal edildi');
+        return false;
+      }
 
-      // Direkt kaydetme - mevcut veri kontrolü yapmadan
-      const healthDataInput = {
-        userId,
-        date: dateStr,
-        heartRate: Math.round(healthData.heartRate?.average || 0),
-        bloodOxygen: Number((healthData.oxygen?.average || 0).toFixed(1)),
-        steps: healthData.steps?.total || 0,
-        caloriesBurned: Number((healthData.calories?.total || 0).toFixed(1)),
-        sleepDuration: healthData.sleep?.totalMinutes || 0,
-        deepSleepMinutes: healthData.sleep?.deep || 0,
-        lightSleepMinutes: healthData.sleep?.light || 0,
-        remSleepMinutes: healthData.sleep?.rem || 0,
-        awakeMinutes: healthData.sleep?.awake || 0,
+      // GraphQL için veri dönüştürme - email ile birlikte
+      const input: CreateHealthDataInput = {
+        userId: userAttributes.email, // Email adresini userId olarak kullan
+        nabiz: Math.round(data.heartRate?.average || 0),
+        oksijen: Math.round(data.oxygen?.average || 0),
+        topuykusuresi: data.sleep?.totalMinutes || 0,
+        rem: data.sleep?.rem || 0,
+        derin: data.sleep?.deep || 0,
+        hafif: data.sleep?.light || 0,
+        adim: data.steps?.total || 0,
+        kalori: Math.round(data.calories?.total || 0),
       };
 
-      console.log('Yeni veri kaydediliyor...');
-      const result = await this.tryDifferentAuthModes(createHealthData, {
-        userId,
-        date: dateStr,
-        heartRate: healthDataInput.heartRate,
-        bloodOxygen: healthDataInput.bloodOxygen,
-        steps: healthDataInput.steps,
-        caloriesBurned: healthDataInput.caloriesBurned,
-        sleepDuration: healthDataInput.sleepDuration,
-        deepSleepMinutes: healthDataInput.deepSleepMinutes,
-        lightSleepMinutes: healthDataInput.lightSleepMinutes,
-        remSleepMinutes: healthDataInput.remSleepMinutes,
-        awakeMinutes: healthDataInput.awakeMinutes
+      console.log(`📤 Kullanıcı ${userAttributes.email} için veri kaydediliyor:`, {
+        adim: input.adim,
+        kalori: input.kalori,
+        nabiz: input.nabiz,
+        oksijen: input.oksijen
       });
 
-      console.log('Sağlık verisi başarıyla kaydedildi:', result);
+      // GraphQL mutation çağrısı
+      const result = await client.graphql({
+        query: createHealthDataMutation,
+        variables: { input }
+      });
+
+      console.log('✅ Sağlık verisi başarıyla kaydedildi:', result);
       return true;
 
     } catch (error) {
-      console.error('Sağlık verisi kaydetme hatası:', error);
+      console.error('❌ Sağlık verisi senkronizasyon hatası:', error);
       return false;
     }
   }
 
-  /**
-   * Belirli tarihte kullanıcının sağlık verisini getirir
-   */
-  private static async getHealthDataByDate(userId: string, date: string): Promise<HealthDataRecord[]> {
-    try {
-      const result = await this.tryDifferentAuthModes(getHealthDataByDate, {
-        userId,
-        date: format(new Date(date), 'yyyy-MM-dd')
-      });
+  async syncAllHealthData(dataArray: LocalHealthData[]): Promise<{ success: number; failed: number }> {
+    let success = 0;
+    let failed = 0;
 
-      return (result as any).data?.listHealthData?.items || [];
-    } catch (error) {
-      console.error('Sağlık verisi getirme hatası:', error);
-      return [];
-    }
-  }
+    console.log(`${dataArray.length} adet sağlık verisi senkronize ediliyor...`);
 
-  /**
-   * Kullanıcının belirli bir tarih aralığındaki sağlık verilerini getirir
-   */
-  static async getHealthDataHistory(startDate: Date, endDate: Date): Promise<HealthDataRecord[]> {
-    try {
-      const user = await getCurrentUser();
-      if (!user || !user.username) {
-        console.error('Kullanıcı oturum açmamış');
-        return [];
-      }
-      
-      console.log(`Sağlık verisi geçmişi getiriliyor: ${format(startDate, 'yyyy-MM-dd')} - ${format(endDate, 'yyyy-MM-dd')}`);
-
-      const result = await this.tryDifferentAuthModes(listHealthDataByUser, {
-        userId: user.username
-      });
-
-      return (result as any).data?.listHealthData?.items || [];
-
-    } catch (error) {
-      console.error('Sağlık verisi geçmişi alma hatası:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Otomatik senkronizasyon - Health Connect'ten veri aldığında çağrılır
-   */
-  static async autoSync(healthData: HealthData, date: Date): Promise<void> {
-    try {
-      console.log('Otomatik senkronizasyon başlatılıyor...');
-      
-      // Veriyi AWS'e kaydet
-      const success = await this.saveHealthData(healthData, date);
-      
-      if (success) {
-        console.log('Otomatik senkronizasyon başarılı');
+    for (const data of dataArray) {
+      const isSuccess = await this.syncHealthData(data);
+      if (isSuccess) {
+        success++;
       } else {
-        console.log('Otomatik senkronizasyon başarısız');
-        // Retry logic ekleyebilirsiniz
-        await this.scheduleRetry(healthData, date);
-      }
-    } catch (error) {
-      console.error('Otomatik senkronizasyon hatası:', error);
-    }
-  }
-
-  /**
-   * Başarısız senkronizasyonları yeniden dene
-   */
-  private static async scheduleRetry(healthData: HealthData, date: Date): Promise<void> {
-    // Retry logic - örneğin 5 dakika sonra tekrar dene
-    console.log('Senkronizasyon 5 dakika sonra yeniden denenecek');
-    
-    setTimeout(async () => {
-      await this.autoSync(healthData, date);
-    }, 5 * 60 * 1000); // 5 dakika
-  }
-
-  /**
-   * Manuel senkronizasyon tetikleyici
-   */
-  static async manualSync(date?: Date): Promise<boolean> {
-    try {
-      console.log('Manuel senkronizasyon başlatılıyor...');
-      
-      // Eğer tarih verilmemişse bugünü kullan
-      const syncDate = date || new Date();
-      
-      // Health Connect'ten veriyi al
-      const HealthDataService = require('./HealthDataService');
-      const healthData = await HealthDataService.fetchHealthDataForDate(syncDate);
-      
-      if (!healthData) {
-        console.log('Senkronize edilecek sağlık verisi bulunamadı');
-        return false;
-      }
-
-      // İlk önce pure API Key test
-      console.log('Pure API Key testi yapılıyor...');
-      await this.testPureApiKey(healthData, syncDate);
-
-      // AWS'e kaydet
-      return await this.saveHealthData(healthData, syncDate);
-      
-    } catch (error) {
-      console.error('Manuel senkronizasyon hatası:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Toplu senkronizasyon - geçmiş verileri senkronize et
-   */
-  static async bulkSync(startDate: Date, endDate: Date): Promise<number> {
-    try {
-      console.log('Toplu senkronizasyon başlatılıyor...');
-      
-      let successCount = 0;
-      const current = new Date(startDate);
-      
-      while (current <= endDate) {
-        try {
-          const success = await this.manualSync(current);
-          if (success) {
-            successCount++;
-          }
-          
-          // Bir sonraki güne geç
-          current.setDate(current.getDate() + 1);
-          
-          // API rate limiting için kısa bir bekleme
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-        } catch (error) {
-          console.error(`${format(current, 'yyyy-MM-dd')} tarihli veri senkronize edilemedi:`, error);
-          current.setDate(current.getDate() + 1);
-        }
+        failed++;
       }
       
-      console.log(`Toplu senkronizasyon tamamlandı: ${successCount} gün başarılı`);
-      return successCount;
-      
-    } catch (error) {
-      console.error('Toplu senkronizasyon hatası:', error);
-      return 0;
+      // API rate limiting için kısa bekleme
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
-  }
 
-  /**
-   * Test amaçlı - sadece API Key ile basit kaydetme
-   */
-  static async testPureApiKey(healthData: HealthData, date: Date): Promise<boolean> {
-    try {
-      console.log('=== PURE API KEY TEST ===');
-      
-      // Tamamen yeni bir client, sadece API Key
-      const pureApiClient = generateClient({
-        authMode: 'apiKey'
-      });
-
-      const testData = {
-        userId: 'test-user-api-key',
-        date: date.toISOString(),
-        heartRate: 75,
-        steps: healthData.steps?.total || 0,
-      };
-
-      console.log('Pure API Key ile test verisi:', testData);
-
-      const result = await pureApiClient.graphql({
-        query: createHealthData,
-        variables: testData
-      });
-
-      console.log('Pure API Key BAŞARILI!', result);
-      return true;
-
-    } catch (error) {
-      console.error('Pure API Key BAŞARISIZ:', error);
-      return false;
-    }
+    console.log(`Senkronizasyon tamamlandı: ${success} başarılı, ${failed} başarısız`);
+    return { success, failed };
   }
 }
 
-export default HealthDataSyncService; 
+export const healthDataSyncService = new HealthDataSyncServiceImpl();
+export default healthDataSyncService; 

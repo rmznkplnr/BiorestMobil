@@ -18,12 +18,68 @@ import { DeviceProvider } from './src/context/DeviceContext';
 import { Alert, Text, View, ActivityIndicator, StyleSheet } from 'react-native';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-// AWS Amplify kaldırıldı - Gen2 için yeniden yapılandırılacak
+
+// Amplify Gen2 konfigürasyonu
+import { Amplify } from 'aws-amplify';
+import { getCurrentUser } from 'aws-amplify/auth';
+import { Hub } from 'aws-amplify/utils';
+import awsconfig from './src/aws-exports';
+
+// Amplify yapılandırması
+Amplify.configure(awsconfig);
+console.log('App.tsx: Amplify Gen2 yapılandırması tamamlandı');
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const App = () => {
-  // Auth sistemi geçici olarak devre dışı - Gen2 ile yeniden yapılandırılacak
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    // Auth durumu kontrol et
+    const checkAuthStatus = async () => {
+      try {
+        await getCurrentUser();
+        console.log('Kullanıcı giriş yapmış');
+        setIsAuthenticated(true);
+      } catch (error) {
+        console.log('Kullanıcı giriş yapmamış');
+        setIsAuthenticated(false);
+      } finally {
+        setIsAuthReady(true);
+      }
+    };
+
+    // Auth state değişikliklerini dinle
+    const authListener = Hub.listen('auth', (data) => {
+      const { payload } = data;
+      console.log('Auth event:', payload.event);
+      
+      if (payload.event === 'signedIn') {
+        console.log('Kullanıcı giriş yaptı');
+        setIsAuthenticated(true);
+      } else if (payload.event === 'signedOut') {
+        console.log('Kullanıcı çıkış yaptı');
+        setIsAuthenticated(false);
+      }
+    });
+
+    checkAuthStatus();
+
+    // Cleanup
+    return () => {
+      authListener();
+    };
+  }, []);
+
+  if (!isAuthReady) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4a90e2" />
+        <Text style={styles.loadingText}>Uygulama yükleniyor...</Text>
+      </View>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

@@ -809,7 +809,7 @@ class HealthConnectService {
       console.log('Uyku kayıt sayısı:', sleepRecords.length);
       
       // Sadece sorgu tarih aralığındaki uyku oturumlarını filtrele
-      const filteredSleepRecords = sleepRecords.filter(session => {
+      const initialFilteredRecords = sleepRecords.filter(session => {
         // startTime ve endTime kontrolü
         if (!session.startTime || !session.endTime) return false;
         
@@ -823,14 +823,100 @@ class HealthConnectService {
         const durationHours = (sessionEnd.getTime() - sessionStart.getTime()) / (1000 * 60 * 60);
         const isReasonableDuration = durationHours <= 14; // Maksimum 14 saat uyku kabul edilebilir
         
-        console.log(`Uyku oturumu: ${session.startTime} - ${session.endTime}, süre: ${durationHours} saat, aralıkta mı: ${isInRange}, makul süre mi: ${isReasonableDuration}`);
+        console.log(`Uyku oturumu: ${session.startTime} - ${session.endTime}, süre: ${durationHours.toFixed(2)} saat, aralıkta mı: ${isInRange}, makul süre mi: ${isReasonableDuration}`);
         
         return isInRange && isReasonableDuration;
       });
       
-      console.log(`Filtreleme sonrası kalan uyku oturumu sayısı: ${filteredSleepRecords.length}`);
+      console.log(`İlk filtreleme sonrası uyku oturumu sayısı: ${initialFilteredRecords.length}`);
       
-      // Bundan sonraki kodlar aynı şekilde hesaplamayı yapar
+      // 🛌 YENİ: Aynı saate başlayan uyku oturumlarını ve kısa uyanmaları dışla
+      let filteredSleepRecords: HealthRecord[] = [];
+      
+      if (initialFilteredRecords.length > 1) {
+        console.log('Birden fazla uyku oturumu bulundu, akıllı filtreleme yapılıyor...');
+        
+        // Önce aynı başlangıç saatine sahip oturumları grupla
+        const sessionGroups = new Map<string, HealthRecord[]>();
+        
+        initialFilteredRecords.forEach(session => {
+          if (session.startTime) {
+            // Başlangıç saatini dakika hassasiyetinde grupla
+            const startKey = new Date(session.startTime).toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm
+            
+            if (!sessionGroups.has(startKey)) {
+              sessionGroups.set(startKey, []);
+            }
+            sessionGroups.get(startKey)!.push(session);
+          }
+        });
+        
+        console.log(`${sessionGroups.size} farklı başlangıç zamanı grubu bulundu`);
+        
+        // Her gruptan en uzun oturumu al
+        const selectedSessions: HealthRecord[] = [];
+        
+        sessionGroups.forEach((sessions, startKey) => {
+          if (sessions.length > 1) {
+            console.log(`${startKey} zamanında ${sessions.length} adet uyku oturumu var, en uzunu seçiliyor`);
+            
+            // Bu grup içinde en uzun oturumu bul
+            const longestInGroup = sessions.reduce((longest, current) => {
+              if (!current.startTime || !current.endTime) return longest;
+              if (!longest.startTime || !longest.endTime) return current;
+              
+              const currentDuration = new Date(current.endTime).getTime() - new Date(current.startTime).getTime();
+              const longestDuration = new Date(longest.endTime).getTime() - new Date(longest.startTime).getTime();
+              
+              return currentDuration > longestDuration ? current : longest;
+            });
+            
+            const durationHours = (new Date(longestInGroup.endTime!).getTime() - new Date(longestInGroup.startTime!).getTime()) / (1000 * 60 * 60);
+            console.log(`Grup ${startKey} için en uzun oturum seçildi: ${durationHours.toFixed(2)} saat`);
+            
+            selectedSessions.push(longestInGroup);
+          } else {
+            // Tek oturum varsa direkt ekle
+            selectedSessions.push(sessions[0]);
+          }
+        });
+        
+        // Şimdi seçilen oturumlardan 2+ saat olanları filtrele
+        const longSessions = selectedSessions.filter(session => {
+          if (!session.startTime || !session.endTime) return false;
+          const sessionStart = new Date(session.startTime);
+          const sessionEnd = new Date(session.endTime);
+          const durationHours = (sessionEnd.getTime() - sessionStart.getTime()) / (1000 * 60 * 60);
+          return durationHours >= 2.0; // En az 2 saat olan oturumlar
+        });
+        
+        if (longSessions.length > 0) {
+          console.log(`${longSessions.length} adet 2+ saat uyku oturumu final listeye alındı`);
+          filteredSleepRecords = longSessions;
+        } else {
+          // Hiç uzun oturum yoksa en uzun olanı al
+          const longestOverall = selectedSessions.reduce((longest, current) => {
+            if (!current.startTime || !current.endTime) return longest;
+            if (!longest.startTime || !longest.endTime) return current;
+            
+            const currentDuration = new Date(current.endTime).getTime() - new Date(current.startTime).getTime();
+            const longestDuration = new Date(longest.endTime).getTime() - new Date(longest.startTime).getTime();
+            
+            return currentDuration > longestDuration ? current : longest;
+          });
+          
+          console.log('Hiç 2+ saat oturum yok, en uzun oturum alındı');
+          filteredSleepRecords = [longestOverall];
+        }
+      } else {
+        // Tek oturum varsa direkt kullan
+        filteredSleepRecords = initialFilteredRecords;
+        console.log('Tek uyku oturumu bulundu, direkt kullanılıyor');
+      }
+      
+      console.log(`Final filtreleme sonrası kalan uyku oturumu sayısı: ${filteredSleepRecords.length}`);
+      
+      // Düzeltilmiş uyku hesaplaması
       let totalSleepMinutes = 0;
       let totalDeepMinutes = 0;
       let totalLightMinutes = 0;
@@ -867,8 +953,6 @@ class HealthConnectService {
           // Mantıklı bir süre mi kontrol et (24 saatten az)
           if (durationMinutes > 0 && durationMinutes < 24 * 60) {
             totalSleepMinutes += durationMinutes;
-            // Başlangıçta tüm uyku light sayılır, aşamalar sonra düzeltilir
-            totalLightMinutes += durationMinutes;
           } else {
             console.log(`Geçersiz uyku süresi (${durationMinutes} dakika), atlanıyor`);
             return; // Bu oturumu atla
@@ -885,8 +969,11 @@ class HealthConnectService {
                 const stageStartDate = new Date(stage.startTime);
                 const stageEndDate = new Date(stage.endTime);
                 
-                // Stage'in query aralığı içinde olup olmadığını kontrol et
-                if (stageStartDate >= startTime && stageEndDate <= endTime) {
+                // Stage'in oturum aralığı içinde olup olmadığını kontrol et
+                const sessionStartDate = new Date(startTime);
+                const sessionEndDate = new Date(endTime);
+                
+                if (stageStartDate >= sessionStartDate && stageEndDate <= sessionEndDate) {
                   const stageDurationMinutes = (stageEndDate.getTime() - stageStartDate.getTime()) / (1000 * 60);
                   
                   // Geçerli süre kontrolü
@@ -897,19 +984,19 @@ class HealthConnectService {
                   
                   console.log(`Uyku aşaması: ${stage.stage} -> ${mappedStage}, süresi: ${stageDurationMinutes} dakika`);
                   
-                  // Aşamaya göre süreleri topla
+                  // Aşamaya göre süreleri topla - DİREKT TOPLAMA
                   switch (mappedStage) {
                     case 'deep':
                       totalDeepMinutes += stageDurationMinutes;
-                      totalLightMinutes -= stageDurationMinutes; // Varsayılan light'tan çıkar
                       break;
                     case 'rem':
                       totalRemMinutes += stageDurationMinutes;
-                      totalLightMinutes -= stageDurationMinutes; // Varsayılan light'tan çıkar
                       break;
                     case 'awake':
                       totalAwakeMinutes += stageDurationMinutes;
-                      totalLightMinutes -= stageDurationMinutes; // Varsayılan light'tan çıkar
+                      break;
+                    case 'light':
+                      totalLightMinutes += stageDurationMinutes;
                       break;
                   }
                   
@@ -923,12 +1010,30 @@ class HealthConnectService {
                 }
               }
             });
+          } else {
+            // Eğer aşama bilgisi yoksa tüm uyku light olarak say
+            totalLightMinutes += durationMinutes;
           }
         }
       });
       
-      // Negatif değerler engellensin
+      // Eğer aşama toplamları toplam uykudan fazlaysa düzelt
+      const totalStageMinutes = totalDeepMinutes + totalLightMinutes + totalRemMinutes + totalAwakeMinutes;
+      
+      console.log(`Aşama toplamları: Deep=${totalDeepMinutes}, Light=${totalLightMinutes}, REM=${totalRemMinutes}, Awake=${totalAwakeMinutes}, Toplam Aşama=${totalStageMinutes}, Toplam Uyku=${totalSleepMinutes}`);
+      
+      // Eğer aşamalar toplamı toplam uykudan farklıysa light uyku düzelt
+      if (totalStageMinutes !== totalSleepMinutes && totalStageMinutes > 0) {
+        const difference = totalSleepMinutes - (totalDeepMinutes + totalRemMinutes + totalAwakeMinutes);
+        totalLightMinutes = Math.max(0, difference);
+        console.log(`Light uyku düzeltildi: ${totalLightMinutes} dakika`);
+      }
+      
+      // Tüm değerlerin pozitif olmasını sağla
+      totalDeepMinutes = Math.max(0, totalDeepMinutes);
       totalLightMinutes = Math.max(0, totalLightMinutes);
+      totalRemMinutes = Math.max(0, totalRemMinutes);
+      totalAwakeMinutes = Math.max(0, totalAwakeMinutes);
       
       // Toplam uyku süresi makul bir aralıkta mı kontrol et (2-14 saat)
       if (totalSleepMinutes > 14 * 60) {

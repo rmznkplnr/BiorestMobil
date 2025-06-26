@@ -17,7 +17,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import HealthConnectService from '../services/HealthConnectService';
 import HealthKitService from '../services/HealthKitService';
-import HealthDataSyncService from '../services/HealthDataSyncService';
+import healthDataSyncService from '../services/HealthDataSyncService';
+import healthDataQueryService from '../services/HealthDataQueryService';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import styles from '../styles/HealthDataScreenStyles';
 import { HealthData } from '../types/health';
@@ -340,6 +341,24 @@ const HealthDataScreen = () => {
   }, []);
 
   /**
+   * Kullanıcının AWS'deki verilerini görüntüle
+   */
+  const handleViewUserData = async () => {
+    try {
+      const userData = await healthDataQueryService.getUserHealthData();
+      const userStats = await healthDataQueryService.getUserStats(7);
+      
+      Alert.alert(
+        'AWS Verileriniz',
+        `Toplam kayıt: ${userData.length} adet\n\nSon 7 gün istatistikleri:\n• Toplam adım: ${userStats?.totalSteps || 0}\n• Toplam kalori: ${userStats?.totalCalories || 0}\n• Ortalama nabız: ${userStats?.averageHeartRate || 0}\n• Ortalama oksijen: ${userStats?.averageOxygen || 0}`,
+        [{ text: 'Tamam' }]
+      );
+    } catch (error) {
+      Alert.alert('Hata', 'Veriler getirilemedi');
+    }
+  };
+
+  /**
    * Manuel AWS senkronizasyonu
    */
   const handleManualSync = async () => {
@@ -358,18 +377,38 @@ const HealthDataScreen = () => {
           { 
             text: 'Bugünü Senkronize Et', 
             onPress: async () => {
-              const success = await HealthDataSyncService.manualSync();
-              setIsSyncing(false);
-              
-              if (success) {
-                Alert.alert(
-                  'Başarılı!', 
-                  'Bugünün sağlık verileri başarıyla AWS\'e kaydedildi.'
-                );
-              } else {
+              try {
+                // Bugünün sağlık verisini al
+                const today = new Date();
+                const healthData = await HealthDataService.fetchHealthDataForDate(today);
+                
+                if (healthData) {
+                  const success = await healthDataSyncService.syncHealthData(healthData);
+                  setIsSyncing(false);
+                  
+                  if (success) {
+                    Alert.alert(
+                      'Başarılı!', 
+                      'Bugünün sağlık verileri başarıyla AWS\'e kaydedildi.'
+                    );
+                  } else {
+                    Alert.alert(
+                      'Hata!', 
+                      'Senkronizasyon sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.'
+                    );
+                  }
+                } else {
+                  setIsSyncing(false);
+                  Alert.alert(
+                    'Veri Bulunamadı!', 
+                    'Bugüne ait sağlık verisi bulunamadı.'
+                  );
+                }
+              } catch (error) {
+                setIsSyncing(false);
                 Alert.alert(
                   'Hata!', 
-                  'Senkronizasyon sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.'
+                  'Senkronizasyon sırasında bir hata oluştu.'
                 );
               }
             }
@@ -381,7 +420,24 @@ const HealthDataScreen = () => {
               const startDate = new Date();
               startDate.setDate(startDate.getDate() - 7);
               
-              const successCount = await HealthDataSyncService.bulkSync(startDate, endDate);
+              // Son 7 günün verilerini sırayla senkronize et
+              let successCount = 0;
+              const currentDate = new Date(startDate);
+              
+              while (currentDate <= endDate) {
+                try {
+                  const healthData = await HealthDataService.fetchHealthDataForDate(new Date(currentDate));
+                  if (healthData) {
+                    const success = await healthDataSyncService.syncHealthData(healthData);
+                    if (success) successCount++;
+                  }
+                  currentDate.setDate(currentDate.getDate() + 1);
+                  await new Promise(resolve => setTimeout(resolve, 200)); // Rate limiting
+                } catch (error) {
+                  console.error('Toplu senkronizasyon hatası:', error);
+                  currentDate.setDate(currentDate.getDate() + 1);
+                }
+              }
               setIsSyncing(false);
               
               Alert.alert(
@@ -424,6 +480,18 @@ const HealthDataScreen = () => {
                 name={isSyncing ? "sync" : "cloud-upload"} 
                 size={20} 
                 color={isSyncing ? "#ffa500" : "#4a90e2"} 
+              />
+            </TouchableOpacity>
+            
+            {/* Kullanıcı Verilerini Görüntüle Butonu */}
+            <TouchableOpacity 
+              style={[styles.settingsButton, { marginRight: 8 }]} 
+              onPress={handleViewUserData}
+            >
+              <Ionicons 
+                name="analytics" 
+                size={20} 
+                color="#4a90e2" 
               />
             </TouchableOpacity>
             <TouchableOpacity style={styles.settingsButton} onPress={() => navigation.navigate('Settings')}>

@@ -38,6 +38,8 @@ const RegisterScreen = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [birthdate, setBirthdate] = useState('');
   const [fullName, setFullName] = useState('');
+  const [familyName, setFamilyName] = useState('');
+  const [gender, setGender] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -45,8 +47,8 @@ const RegisterScreen = () => {
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
 
   const validateInputs = () => {
-    if (!email || !password || !confirmPassword || !fullName) {
-      setError('Lütfen tüm zorunlu alanları doldurun');
+    if (!email || !password || !confirmPassword || !fullName || !familyName) {
+      setError('Lütfen tüm zorunlu alanları doldurun (Ad, Soyad, E-posta, Şifre)');
       return false;
     }
 
@@ -55,16 +57,48 @@ const RegisterScreen = () => {
       return false;
     }
 
-    // AWS Cognito şifre gereksinimleri - Minimum uzunluk kontrolü
+    // AWS Cognito şifre gereksinimleri kontrolü
     if (password.length < 8) {
       setError('Şifre en az 8 karakter olmalıdır');
       return false;
     }
 
-    // Telefon numarası formatlama kontrolü (basit kontrol)
-    if (phoneNumber && !phoneNumber.startsWith('+')) {
-      setError('Telefon numarası "+" ile başlamalıdır (Örn: +905551234567)');
+    // Büyük harf kontrolü
+    if (!/[A-Z]/.test(password)) {
+      setError('Şifre en az bir büyük harf içermelidir');
       return false;
+    }
+
+    // Küçük harf kontrolü
+    if (!/[a-z]/.test(password)) {
+      setError('Şifre en az bir küçük harf içermelidir');
+      return false;
+    }
+
+    // Rakam kontrolü
+    if (!/[0-9]/.test(password)) {
+      setError('Şifre en az bir rakam içermelidir');
+      return false;
+    }
+
+    // Özel karakter kontrolü
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      setError('Şifre en az bir özel karakter içermelidir (!@#$%^&* vb.)');
+      return false;
+    }
+
+    // Telefon numarası formatı kontrolü (AWS Cognito E.164 formatı)
+    if (phoneNumber) {
+      if (!phoneNumber.startsWith('+')) {
+        setError('Telefon numarası "+" ile başlamalıdır (Örn: +905551234567)');
+        return false;
+      }
+      
+      // Türkiye için +90 kontrolü (opsiyonel)
+      if (phoneNumber.length < 13 || phoneNumber.length > 15) {
+        setError('Telefon numarası geçerli formatta değil (Örn: +905551234567)');
+        return false;
+      }
     }
 
     return true;
@@ -167,13 +201,19 @@ const RegisterScreen = () => {
         email, 
         password: '********',
         phoneNumber: phoneNumber || 'Belirtilmedi',
-        birthdate: birthdate || 'Belirtilmedi'
+        birthdate: birthdate || 'Belirtilmedi',
+        fullName
+      });
+      console.log('AWS Cognito Config kontrol:', {
+        userPoolId: 'eu-central-1_HVV6Yk1GU',
+        region: 'eu-central-1'
       });
 
       // Kullanıcı öznitelikleri için obje oluştur
       const userAttributes: any = {
         email,
-        name: fullName
+        name: fullName,
+        family_name: familyName
       };
 
       // Opsiyonel alanları ekle
@@ -183,6 +223,10 @@ const RegisterScreen = () => {
       
       if (birthdate) {
         userAttributes.birthdate = birthdate;
+      }
+
+      if (gender) {
+        userAttributes.gender = gender;
       }
 
       // AWS Amplify Gen 2 için signUp işlemi
@@ -335,13 +379,24 @@ const RegisterScreen = () => {
             <Text style={styles.cardTitle}>Kayıt Ol</Text>
             <View style={styles.form}>
               <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>İsim</Text>
+                <Text style={styles.inputLabel}>Ad</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="İsminizi girin"
+                  placeholder="Adınızı girin"
                   placeholderTextColor="rgba(255, 255, 255, 0.5)"
                   value={fullName}
                   onChangeText={setFullName}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Soyad</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Soyadınızı girin"
+                  placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                  value={familyName}
+                  onChangeText={setFamilyName}
                 />
               </View>
               
@@ -393,9 +448,62 @@ const RegisterScreen = () => {
                   title="Doğum Tarihi Seç"
                 />
               </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Cinsiyet (Opsiyonel)</Text>
+                <View style={styles.genderContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.genderButton,
+                      gender === 'male' && styles.genderButtonSelected
+                    ]}
+                    onPress={() => setGender('male')}
+                  >
+                    <Text style={[
+                      styles.genderButtonText,
+                      gender === 'male' && styles.genderButtonTextSelected
+                    ]}>
+                      Erkek
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.genderButton,
+                      gender === 'female' && styles.genderButtonSelected
+                    ]}
+                    onPress={() => setGender('female')}
+                  >
+                    <Text style={[
+                      styles.genderButtonText,
+                      gender === 'female' && styles.genderButtonTextSelected
+                    ]}>
+                      Kadın
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.genderButton,
+                      gender === 'other' && styles.genderButtonSelected
+                    ]}
+                    onPress={() => setGender('other')}
+                  >
+                    <Text style={[
+                      styles.genderButtonText,
+                      gender === 'other' && styles.genderButtonTextSelected
+                    ]}>
+                      Diğer
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
               
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Şifre</Text>
+                <Text style={styles.passwordRequirements}>
+                  Şifre en az 8 karakter, büyük harf, küçük harf, rakam ve özel karakter içermelidir
+                </Text>
                 <TextInput
                   style={styles.input}
                   placeholder="Şifrenizi girin"
@@ -517,6 +625,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     opacity: 0.9,
   },
+  passwordRequirements: {
+    color: '#aaa',
+    fontSize: 12,
+    marginBottom: 8,
+    fontStyle: 'italic',
+    lineHeight: 16,
+  },
   input: {
     backgroundColor: 'rgba(70, 70, 70, 0.3)',
     borderRadius: 12,
@@ -618,6 +733,35 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#4a90e2',
     opacity: 1,
+  },
+  genderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  genderButton: {
+    flex: 1,
+    backgroundColor: 'rgba(70, 70, 70, 0.3)',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(100, 100, 100, 0.5)',
+  },
+  genderButtonSelected: {
+    backgroundColor: '#4a90e2',
+    borderColor: '#4a90e2',
+  },
+  genderButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    opacity: 0.8,
+  },
+  genderButtonTextSelected: {
+    opacity: 1,
+    fontWeight: '600',
   },
 });
 
