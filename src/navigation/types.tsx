@@ -1,5 +1,6 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SleepData, SleepNotification as ImportedSleepNotification } from '../types/sleepTypes';
+import { SleepMetric } from '../types/health';
 
 // Z-score hesaplama için tip tanımları
 export interface SleepMetrics {
@@ -45,10 +46,12 @@ export interface SleepMetrics {
     DeviceDetail: { deviceId: string };
     
     // Sleep Screens
-    SleepDetails: { sleepData: SleepData };
+    SleepDetails: { sleepData: SleepMetric };
     
     // Health Screens
     HealthData: undefined;
+    HeartRateDetail: { date?: string };
+    OxygenLevelDetail: { date?: string };
 
     // Store Screens
     ProductDetail: { productId: string };

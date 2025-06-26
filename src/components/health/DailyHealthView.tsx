@@ -2,12 +2,16 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, RefreshControl, ActivityIndicator,TouchableOpacity } from 'react-native';
 import { format, subDays, addDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack'; 
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import HealthMetricCard from '../common/HealthMetricCard';
 import HealthViewStyles from '../common/HealthViewStyles';
 import { HealthData } from '../../types/health';
 import { fetchHealthDataForDate } from '../../services/HealthDataService';
+import { RootStackParamList } from '../../navigation/types';
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface DailyHealthViewProps {
   onDataLoaded?: (data: HealthData) => void;
@@ -24,6 +28,7 @@ const DailyHealthView: React.FC<DailyHealthViewProps> = ({ onDataLoaded, isActiv
   const isFocused = useIsFocused();
   const dataFetchingRef = useRef<boolean>(false);
   const dateChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const navigation = useNavigation<NavigationProp>();
 
   const fetchData = useCallback(async (date: Date, isRefresh = false) => {
     // Veri yükleme işlemi zaten devam ediyorsa, yeni bir işlem başlatmayalım
@@ -79,6 +84,13 @@ const DailyHealthView: React.FC<DailyHealthViewProps> = ({ onDataLoaded, isActiv
     setRefreshing(true);
     fetchData(selectedDate, true);
   }, [selectedDate, fetchData]);
+
+  // Uyku detay sayfasına yönlendirme işlemi
+  const navigateToSleepDetail = useCallback(() => {
+    if (healthData && healthData.sleep) {
+      navigation.navigate('SleepDetails', { sleepData: healthData.sleep });
+    }
+  }, [navigation, healthData]);
 
   // Sekme aktif olduğunda veya tarih değiştiğinde veri yükle
   useEffect(() => {
@@ -147,7 +159,7 @@ const DailyHealthView: React.FC<DailyHealthViewProps> = ({ onDataLoaded, isActiv
           {/* Kalp Atış Hızı */}
           <View style={HealthViewStyles.gridItem}>
             <HealthMetricCard
-              title="Kalp Atış Hızı"
+              title="Nabız"
               value={healthData?.heartRate.average || 0}
               unit="bpm"
               icon="heart"
@@ -161,17 +173,34 @@ const DailyHealthView: React.FC<DailyHealthViewProps> = ({ onDataLoaded, isActiv
           {/* Oksijen Seviyesi */}
           <View style={HealthViewStyles.gridItem}>
             <HealthMetricCard
-              title="Oksijen Seviyesi"
+              title="Oksijen"
               value={healthData?.oxygen.average || 0}
               unit="%"
               icon="water"
               color="#3498db"
-              minValue={90}
-              maxValue={100}
               values={healthData?.oxygen.values || []}
               times={healthData?.oxygen.times || []}
               lastUpdated={healthData?.oxygen.lastUpdated}
             />
+          </View>
+          {/* Uyku */}
+          <View style={HealthViewStyles.gridItemLarge}>
+            <TouchableOpacity onPress={navigateToSleepDetail} activeOpacity={0.8}>
+              <HealthMetricCard
+                title="Uyku"
+                value={healthData?.sleep.totalMinutes || 0}
+                unit="dk"
+                icon="moon"
+                color="#34495e"
+                extraData={healthData?.sleep}
+                formatValue={(value) => {
+                  const hours = Math.floor(value / 60);
+                  const minutes = value % 60;
+                  return `${hours}s ${minutes}dk`;
+                }}
+                lastUpdated={healthData?.sleep.lastUpdated}
+              />
+            </TouchableOpacity>
           </View>
 
           {/* Adımlar */}
@@ -201,23 +230,7 @@ const DailyHealthView: React.FC<DailyHealthViewProps> = ({ onDataLoaded, isActiv
             />
           </View>
 
-          {/* Uyku */}
-          <View style={HealthViewStyles.gridItemLarge}>
-            <HealthMetricCard
-              title="Uyku"
-              value={healthData?.sleep.totalMinutes || 0}
-              unit="dk"
-              icon="moon"
-              color="#34495e"
-              extraData={healthData?.sleep}
-              formatValue={(value) => {
-                const hours = Math.floor(value / 60);
-                const minutes = value % 60;
-                return `${hours}s ${minutes}dk`;
-              }}
-              lastUpdated={healthData?.sleep.lastUpdated}
-            />
-          </View>
+
         </View>
       </ScrollView>
     </View>

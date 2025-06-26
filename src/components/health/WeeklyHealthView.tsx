@@ -159,7 +159,7 @@ const WeeklyHealthView: React.FC<WeeklyHealthViewProps> = ({ onDataLoaded, isAct
           {/* Kalp Atış Hızı */}
           <View style={HealthViewStyles.gridItem}>
             <HealthMetricCard
-              title="Kalp Atış Hızı"
+              title="Nabız"
               value={healthData?.heartRate.average || 0}
               unit="bpm"
               icon="heart"
@@ -173,16 +173,32 @@ const WeeklyHealthView: React.FC<WeeklyHealthViewProps> = ({ onDataLoaded, isAct
           {/* Oksijen Seviyesi */}
           <View style={HealthViewStyles.gridItem}>
             <HealthMetricCard
-              title="Oksijen Seviyesi"
+              title="Oksijen"
               value={healthData?.oxygen.average || 0}
               unit="%"
               icon="water"
               color="#3498db"
-              minValue={90}
-              maxValue={100}
               values={healthData?.oxygen.values || []}
               times={healthData?.oxygen.times || []}
               lastUpdated={healthData?.oxygen.lastUpdated}
+            />
+          </View>
+          
+          {/* Uyku */}
+          <View style={HealthViewStyles.gridItemLarge}>
+            <HealthMetricCard
+              title="Uyku"
+              value={healthData?.sleep.totalMinutes || 0}
+              unit="dk"
+              icon="moon"
+              color="#34495e"
+              extraData={healthData?.sleep}
+              formatValue={(value) => {
+                const hours = Math.floor(value / 60);
+                const minutes = value % 60;
+                return `${hours}s ${minutes}dk`;
+              }}
+              lastUpdated={healthData?.sleep.lastUpdated}
             />
           </View>
 
@@ -213,23 +229,7 @@ const WeeklyHealthView: React.FC<WeeklyHealthViewProps> = ({ onDataLoaded, isAct
             />
           </View>
 
-          {/* Uyku */}
-          <View style={HealthViewStyles.gridItemLarge}>
-            <HealthMetricCard
-              title="Uyku"
-              value={healthData?.sleep.totalMinutes || 0}
-              unit="dk"
-              icon="moon"
-              color="#34495e"
-              extraData={healthData?.sleep}
-              formatValue={(value) => {
-                const hours = Math.floor(value / 60);
-                const minutes = value % 60;
-                return `${hours}s ${minutes}dk`;
-              }}
-              lastUpdated={healthData?.sleep.lastUpdated}
-            />
-          </View>
+
         </View>
       </ScrollView>
     </View>

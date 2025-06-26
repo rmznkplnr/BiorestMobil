@@ -12,88 +12,18 @@ import DeviceDetailScreen from './src/screens/DeviceDetailScreen';
 import ConfirmAccountScreen from './src/screens/ConfirmAccountScreen';
 import HealthDataScreen from './src/screens/HealthDataScreen';
 import SleepDetailsScreen from './src/screens/SleepDetailsScreen';
+import HeartRateDetailScreen from './src/screens/HeartRateDetailScreen';
+import OxygenLevelDetailScreen from './src/screens/OxygenLevelDetailScreen';
 import { DeviceProvider } from './src/context/DeviceContext';
 import { Alert, Text, View, ActivityIndicator, StyleSheet } from 'react-native';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import awsconfig from './src/aws-exports';
-import { Amplify } from 'aws-amplify';
-import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
-import { Hub } from 'aws-amplify/utils';
-
-
-// Amplify yapılandırması
-console.log('App.tsx: Amplify yapılandırması başlıyor');
-Amplify.configure(awsconfig);
-console.log('App.tsx: Amplify yapılandırması tamamlandı - Auth modu: AMAZON_COGNITO_USER_POOLS');
+// AWS Amplify kaldırıldı - Gen2 için yeniden yapılandırılacak
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const App = () => {
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Auth durumu kontrol et
-    const checkAuthStatus = async () => {
-      try {
-        await getCurrentUser();
-        console.log('Kullanıcı giriş yapmış');
-        setIsAuthenticated(true);
-      } catch (error) {
-        console.log('Kullanıcı giriş yapmamış');
-        setIsAuthenticated(false);
-      } finally {
-        setIsAuthReady(true);
-      }
-    };
-
-    // Auth hatalarını dinle
-    const authListener = Hub.listen('auth', (data) => {
-      const { payload } = data;
-      console.log('Auth event:', payload.event);
-      
-      if (payload.event === 'signedIn') {
-        console.log('Kullanıcı giriş yaptı');
-        setIsAuthenticated(true);
-      } else if (payload.event === 'signedOut') {
-        console.log('Kullanıcı çıkış yaptı');
-        setIsAuthenticated(false);
-      } else if (payload.event === 'signInWithRedirect_failure') {
-        console.log('Giriş başarısız oldu:', payload);
-        
-        // Basit hata mesajı
-        setAuthError('Bağlantı hatası: Giriş yapılamadı');
-      }
-    });
-
-    checkAuthStatus();
-
-    // Temizlik
-    return () => {
-      authListener();
-    };
-  }, []);
-
-  if (!isAuthReady) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4a90e2" />
-        <Text style={styles.loadingText}>Uygulama yükleniyor...</Text>
-      </View>
-    );
-  }
-
-  if (authError) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>Bağlantı Hatası</Text>
-        <Text style={styles.errorText}>{authError}</Text>
-        <Text style={styles.errorHelp}>Lütfen internet bağlantınızı kontrol edin ve uygulamayı yeniden başlatın.</Text>
-      </View>
-    );
-  }
+  // Auth sistemi geçici olarak devre dışı - Gen2 ile yeniden yapılandırılacak
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -113,6 +43,8 @@ const App = () => {
               <Stack.Screen name="DeviceManagement" component={DeviceManagementScreen} />
               <Stack.Screen name="DeviceDetail" component={DeviceDetailScreen} />
               <Stack.Screen name="HealthData" component={HealthDataScreen} />
+              <Stack.Screen name="HeartRateDetail" component={HeartRateDetailScreen} />
+              <Stack.Screen name="OxygenLevelDetail" component={OxygenLevelDetailScreen} />
               <Stack.Screen name="SleepDetails" component={SleepDetailsScreen} />
               <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />

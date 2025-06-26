@@ -17,8 +17,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import HealthConnectService from '../services/HealthConnectService';
 import HealthKitService from '../services/HealthKitService';
+import HealthDataSyncService from '../services/HealthDataSyncService';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Auth  from 'aws-amplify';
 import styles from '../styles/HealthDataScreenStyles';
 import { HealthData } from '../types/health';
 import HealthDataService from '../services/HealthDataService';
@@ -27,15 +27,11 @@ import HealthDataService from '../services/HealthDataService';
 import DailyHealthView from '../components/health/DailyHealthView';
 import WeeklyHealthView from '../components/health/WeeklyHealthView';
 import MonthlyHealthView from '../components/health/MonthlyHealthView';
-import SleepDetailView from '../components/health/SleepDetailView';
 
 type HealthDataScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 // Zaman aralığı tipi
 type TimeRange = 'day' | 'week' | 'month';
-
-// View tipi
-type ViewType = 'overview' | 'sleep';
 
 const HealthDataScreen = () => {
   const navigation = useNavigation<HealthDataScreenNavigationProp>();
@@ -44,9 +40,9 @@ const HealthDataScreen = () => {
   const [isHealthKitAvailable, setIsHealthKitAvailable] = useState(false);
   const [loading, setLoading] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>('day');
-  const [viewType, setViewType] = useState<ViewType>('overview');
   const [isPermissionModalVisible, setIsPermissionModalVisible] = useState(false);
   const [healthData, setHealthData] = useState<HealthData | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Animasyon değerleri
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -55,18 +51,10 @@ const HealthDataScreen = () => {
   // Zaman sekmesi animasyonu
   const tabTranslateX = useRef(new Animated.Value(0)).current;
   const tabWidth = Dimensions.get('window').width / 3 - 20;
-  
-  // Görünüm tipi animasyonu
-  const viewTabTranslateX = useRef(new Animated.Value(0)).current;
-  const viewTabWidth = Dimensions.get('window').width / 4 - 20;
 
   // Tab değişimi için referans
   const lastTabChangeTime = useRef<number>(0);
   const tabChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Görünüm değişimi için referans
-  const lastViewChangeTime = useRef<number>(0);
-  const viewChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   useEffect(() => {
     const checkConfig = async () => {
@@ -102,9 +90,6 @@ const HealthDataScreen = () => {
       if (tabChangeTimeoutRef.current) {
         clearTimeout(tabChangeTimeoutRef.current);
       }
-      if (viewChangeTimeoutRef.current) {
-        clearTimeout(viewChangeTimeoutRef.current);
-      }
     };
   }, []);
 
@@ -121,19 +106,6 @@ const HealthDataScreen = () => {
       useNativeDriver: true
     }).start();
   }, [timeRange, tabTranslateX, tabWidth]);
-  
-  // Görünüm değişiminde animasyon
-  useEffect(() => {
-    let position = 0;
-    if (viewType === 'sleep') position = 1;
-    
-    Animated.spring(viewTabTranslateX, {
-      toValue: position * viewTabWidth,
-      friction: 8,
-      tension: 80,
-      useNativeDriver: true
-    }).start();
-  }, [viewType, viewTabTranslateX, viewTabWidth]);
 
   const showHealthConnectPermissionModal = () => {
     setIsPermissionModalVisible(true);
@@ -360,35 +332,6 @@ const HealthDataScreen = () => {
     setTimeRange(newRange);
     lastTabChangeTime.current = now;
   };
-  
-  // Görünüm tipini değiştir
-  const changeViewType = (newViewType: ViewType) => {
-    if (newViewType === viewType) return; // Aynı sekmeye tıklandıysa işlem yapma
-    
-    const now = Date.now();
-    
-    // Son görünüm değişiminden bu yana 300ms geçti mi kontrol et
-    if (now - lastViewChangeTime.current < 300) {
-      console.log('Çok hızlı görünüm değişimi engellendi');
-      
-      // Önceki zamanlayıcıyı temizle
-      if (viewChangeTimeoutRef.current) {
-        clearTimeout(viewChangeTimeoutRef.current);
-      }
-      
-      // Yeni bir zamanlayıcı başlat
-      viewChangeTimeoutRef.current = setTimeout(() => {
-        setViewType(newViewType);
-        lastViewChangeTime.current = Date.now();
-      }, 300);
-      
-      return;
-    }
-    
-    // Normal görünüm değişimi
-    setViewType(newViewType);
-    lastViewChangeTime.current = now;
-  };
 
   // Sağlık verilerini yükleme işlemi tamamlandığında çağrılacak callback
   const handleDataLoaded = useCallback((data: HealthData) => {
@@ -396,59 +339,122 @@ const HealthDataScreen = () => {
     setLoading(false);
   }, []);
 
+  /**
+   * Manuel AWS senkronizasyonu
+   */
+  const handleManualSync = async () => {
+    try {
+      setIsSyncing(true);
+      
+      Alert.alert(
+        'Veri Senkronizasyonu',
+        'Sağlık verileriniz AWS veritabanına senkronize edilsin mi?',
+        [
+          { 
+            text: 'Vazgeç', 
+            style: 'cancel',
+            onPress: () => setIsSyncing(false)
+          },
+          { 
+            text: 'Bugünü Senkronize Et', 
+            onPress: async () => {
+              const success = await HealthDataSyncService.manualSync();
+              setIsSyncing(false);
+              
+              if (success) {
+                Alert.alert(
+                  'Başarılı!', 
+                  'Bugünün sağlık verileri başarıyla AWS\'e kaydedildi.'
+                );
+              } else {
+                Alert.alert(
+                  'Hata!', 
+                  'Senkronizasyon sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.'
+                );
+              }
+            }
+          },
+          { 
+            text: 'Son 7 Günü Senkronize Et', 
+            onPress: async () => {
+              const endDate = new Date();
+              const startDate = new Date();
+              startDate.setDate(startDate.getDate() - 7);
+              
+              const successCount = await HealthDataSyncService.bulkSync(startDate, endDate);
+              setIsSyncing(false);
+              
+              Alert.alert(
+                'Toplu Senkronizasyon Tamamlandı!', 
+                `${successCount} günün verisi başarıyla senkronize edildi.`
+              );
+            }
+          }
+        ]
+      );
+      
+    } catch (error) {
+      setIsSyncing(false);
+      console.error('Manuel senkronizasyon hatası:', error);
+      Alert.alert(
+        'Hata!', 
+        'Senkronizasyon başlatılırken bir hata oluştu.'
+      );
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <View style={styles.container}>
-        <Animated.View 
-          style={[
-            styles.header,
-            {
-              opacity: fadeAnim,
-              transform: [{translateY: slideAnim}]
-            }
-          ]}
-        >
-          <Text style={styles.headerTitle}>Sağlık Verilerim</Text>
-          <TouchableOpacity 
-            style={styles.settingsButton}
-            onPress={() => navigation.navigate('Settings')}
-          >
-            <Ionicons name="settings-outline" size={24} color="#fff" />
+      <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
-        </Animated.View>
+          <Text style={styles.headerTitle}>Sağlık Verileri</Text>
+          <View style={{ flexDirection: 'row' }}>
+            {/* AWS Senkronizasyon Butonu */}
+            <TouchableOpacity 
+              style={[styles.settingsButton, { marginRight: 8 }]} 
+              onPress={handleManualSync}
+              disabled={isSyncing}
+            >
+              <Ionicons 
+                name={isSyncing ? "sync" : "cloud-upload"} 
+                size={20} 
+                color={isSyncing ? "#ffa500" : "#4a90e2"} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.settingsButton} onPress={() => navigation.navigate('Settings')}>
+              <Ionicons name="settings" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
 
-        {/* Görünüm tipi seçici */}
+        {/* Zaman aralığı seçici */}
         <Animated.View style={[
-          styles.viewTypeTabs,
+          styles.timeRangeSelector,
           {
             opacity: fadeAnim,
-            transform: [{translateY: Animated.multiply(slideAnim, 1.05)}]
+            transform: [{translateY: Animated.multiply(slideAnim, 1.1)}]
           }
         ]}>
-          <View style={{flexDirection: 'row', justifyContent: 'space-between', width: '100%'}}>
-            {[
-              { type: 'overview', icon: 'grid-outline', label: 'Genel' },
-              { type: 'sleep', icon: 'moon-outline', label: 'Uyku' }
-            ].map((item) => (
+          <View style={{flexDirection: 'row', justifyContent: 'space-evenly', width: '100%'}}>
+            {['day', 'week', 'month'].map((range) => (
               <TouchableOpacity
-                key={item.type}
+                key={range}
                 style={[
-                  styles.viewTypeOption,
-                  viewType === item.type && styles.selectedViewType
+                  styles.timeRangeOption,
+                  timeRange === range && styles.selectedTimeRange
                 ]}
-                onPress={() => changeViewType(item.type as ViewType)}
+                onPress={() => changeTimeRange(range as TimeRange)}
               >
-                <Ionicons 
-                  name={item.icon} 
-                  size={18} 
-                  color={viewType === item.type ? '#4a90e2' : '#aaa'} 
-                />
                 <Text style={[
-                  styles.viewTypeText,
-                  {color: viewType === item.type ? '#fff' : '#aaa'}
+                  {color: timeRange === range ? '#fff' : '#aaa', fontSize: 14},
+                  timeRange === range && styles.selectedTimeRangeText
                 ]}>
-                  {item.label}
+                  {range === 'day' ? 'Gün' : range === 'week' ? 'Hafta' : 'Ay'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -461,97 +467,38 @@ const HealthDataScreen = () => {
                 position: 'absolute',
                 bottom: 0,
                 height: 3,
-                width: viewTabWidth,
+                width: tabWidth,
                 backgroundColor: '#4a90e2',
                 borderRadius: 3,
-                transform: [{ translateX: viewTabTranslateX }]
+                transform: [{ translateX: tabTranslateX }]
               }
             ]}
           />
         </Animated.View>
 
-        {/* Zaman aralığı seçici - Sadece genel bakış görünümünde göster */}
-        {viewType === 'overview' && (
-          <Animated.View style={[
-            styles.timeRangeSelector,
-            {
-              opacity: fadeAnim,
-              transform: [{translateY: Animated.multiply(slideAnim, 1.1)}]
-            }
-          ]}>
-            <View style={{flexDirection: 'row', justifyContent: 'space-evenly', width: '100%'}}>
-              {['day', 'week', 'month'].map((range) => (
-                <TouchableOpacity
-                  key={range}
-                  style={[
-                    styles.timeRangeOption,
-                    timeRange === range && styles.selectedTimeRange
-                  ]}
-                  onPress={() => changeTimeRange(range as TimeRange)}
-                >
-                  <Text style={[
-                    {color: timeRange === range ? '#fff' : '#aaa', fontSize: 14},
-                    timeRange === range && styles.selectedTimeRangeText
-                  ]}>
-                    {range === 'day' ? 'Gün' : range === 'week' ? 'Hafta' : 'Ay'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            
-            {/* Kaydırıcı çubuk animasyonu */}
-            <Animated.View
-              style={[
-                {
-                  position: 'absolute',
-                  bottom: 0,
-                  height: 3,
-                  width: tabWidth,
-                  backgroundColor: '#4a90e2',
-                  borderRadius: 3,
-                  transform: [{ translateX: tabTranslateX }]
-                }
-              ]}
-            />
-          </Animated.View>
-        )}
-
-        {/* Seçilen görünüm tipi ve zaman aralığına göre içerik */}
+        {/* Seçilen zaman aralığına göre içerik */}
         <View style={styles.content}>
-          {/* Genel Bakış Görünümü */}
-          {viewType === 'overview' && (
-            <>
-              {timeRange === 'day' && (
-                <DailyHealthView 
-                  isActive={timeRange === 'day' && viewType === 'overview'}
-                  onDataLoaded={handleDataLoaded}
-                />
-              )}
-              
-              {timeRange === 'week' && (
-                <WeeklyHealthView 
-                  isActive={timeRange === 'week' && viewType === 'overview'}
-                  onDataLoaded={handleDataLoaded}
-                />
-              )}
-              
-              {timeRange === 'month' && (
-                <MonthlyHealthView 
-                  onError={(error) => console.error('Aylık görünüm hatası:', error)}
-                />
-              )}
-            </>
+          {timeRange === 'day' && (
+            <DailyHealthView 
+              isActive={timeRange === 'day'}
+              onDataLoaded={handleDataLoaded}
+            />
           )}
           
-          {/* Uyku Görünümü */}
-          {viewType === 'sleep' && (
-            <SleepDetailView 
-              sleepData={healthData?.sleep} 
-              loading={loading}
+          {timeRange === 'week' && (
+            <WeeklyHealthView 
+              isActive={timeRange === 'week'}
+              onDataLoaded={handleDataLoaded}
+            />
+          )}
+          
+          {timeRange === 'month' && (
+            <MonthlyHealthView 
+              onError={(error) => console.error('Aylık görünüm hatası:', error)}
             />
           )}
         </View>
-      </View>
+      </Animated.View>
 
       {/* Health Connect izin modal'ı */}
       <Modal

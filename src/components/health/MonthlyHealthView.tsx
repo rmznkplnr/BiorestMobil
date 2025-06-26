@@ -122,8 +122,8 @@ const MonthlyHealthView: React.FC<MonthlyHealthViewProps> = ({ onError }) => {
           <View style={HealthViewStyles.grid}>
             <View style={HealthViewStyles.gridItem}>
               <HealthMetricCard
-                title="Kalp atış hızı"
-                value={healthData?.heartRate?.average ? `${Math.round(healthData.heartRate.average)}` : '-'}
+                title="Nabız"
+                value={healthData?.heartRate?.average ? `${Math.round(healthData.heartRate.average)}` : '0'}
                 unit="BPM"
                 icon="heart"
                 color="#e74c3c"
@@ -132,11 +132,26 @@ const MonthlyHealthView: React.FC<MonthlyHealthViewProps> = ({ onError }) => {
             
             <View style={HealthViewStyles.gridItem}>
               <HealthMetricCard
-                title="Oksijen seviyesi"
-                value={healthData?.oxygen?.average ? `${Math.round(healthData.oxygen.average)}` : '-'}
+                title="Oksijen"
+                value={healthData?.oxygen?.average ? `${Math.round(healthData.oxygen.average)}` : '0'}
                 unit="%"
                 icon="water"
                 color="#3498db"
+              />
+            </View>
+                        
+            <View style={HealthViewStyles.gridItemLarge}>
+              <HealthMetricCard
+                title="Uyku"
+                value={healthData?.sleep?.totalMinutes ? healthData.sleep.totalMinutes : 0}
+                unit="dk"
+                icon="moon"
+                color="#8e44ad"
+                formatValue={(value) => {
+                  const hours = Math.floor(value / 60);
+                  const minutes = value % 60;
+                  return `${hours}s ${minutes}dk`;
+                }}
               />
             </View>
             
@@ -162,21 +177,7 @@ const MonthlyHealthView: React.FC<MonthlyHealthViewProps> = ({ onError }) => {
             
 
 
-            
-            <View style={HealthViewStyles.gridItemLarge}>
-              <HealthMetricCard
-                title="Uyku"
-                value={healthData?.sleep?.totalMinutes ? healthData.sleep.totalMinutes : 0}
-                unit="dk"
-                icon="moon"
-                color="#8e44ad"
-                formatValue={(value) => {
-                  const hours = Math.floor(value / 60);
-                  const minutes = value % 60;
-                  return `${hours}s ${minutes}dk`;
-                }}
-              />
-            </View>
+
           </View>
         </ScrollView>
       )}

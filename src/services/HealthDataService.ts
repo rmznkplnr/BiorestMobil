@@ -1,6 +1,7 @@
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import HealthConnectService from './HealthConnectService';
 import HealthKitService from './HealthKitService';
+import HealthDataSyncService from './HealthDataSyncService';
 import { HealthData, mapHealthConnectData, mapHealthKitData } from '../types/health';
 import { Amplify } from 'aws-amplify';
 import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
@@ -50,9 +51,18 @@ export const fetchHealthDataForDate = async (date: Date): Promise<HealthData | n
         }));
         
         healthData = healthConnectData;
+
+        // 🔥 YENİ: Otomatik AWS senkronizasyonu
+        try {
+          console.log('AWS otomatik senkronizasyonu başlatılıyor...');
+          await HealthDataSyncService.autoSync(healthData, date);
+        } catch (syncError) {
+          console.error('AWS senkronizasyon hatası (veri yine de gösterilecek):', syncError);
+          // Senkronizasyon hatası olsa bile veriyi kullanıcıya göster
+        }
+
       } else {
         console.log('Health Connect verisi null döndü');
-
       }
     } else if (Platform.OS === 'ios') {
       console.log('iOS için HealthKit verisi isteniyor');
@@ -61,6 +71,15 @@ export const fetchHealthDataForDate = async (date: Date): Promise<HealthData | n
       if (healthKitData) {
         console.log('HealthKit verisi alındı');
         healthData = mapHealthKitData(healthKitData);
+
+        // 🔥 YENİ: iOS için de otomatik AWS senkronizasyonu
+        try {
+          console.log('AWS otomatik senkronizasyonu başlatılıyor (iOS)...');
+          await HealthDataSyncService.autoSync(healthData, date);
+        } catch (syncError) {
+          console.error('AWS senkronizasyon hatası (veri yine de gösterilecek):', syncError);
+        }
+
       } else {
         console.log('HealthKit verisi null döndü');
       }

@@ -1,9 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { LineChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
 import { AnimatedCircularProgress } from 'react-native-circular-progress';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../navigation/types';
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface HealthMetricCardProps {
   title: string;
@@ -38,7 +42,7 @@ const HealthMetricCard = ({
   formatValue,
   extraData
 }: HealthMetricCardProps) => {
-  const screenWidth = Dimensions.get('window').width;
+  const navigation = useNavigation<NavigationProp>();
   
   const displayValue = typeof value === 'string' 
     ? value 
@@ -90,69 +94,13 @@ const HealthMetricCard = ({
     );
   };
   
-  const renderChart = () => {
-    if (!values || !times || values.length < 2) return null;
-    
-    // En son 5 veriyi göster
-    const displayCount = Math.min(values.length, 5);
-    const displayValues = values.slice(-displayCount);
-    const displayTimes = times.slice(-displayCount);
-    
-    const chartData = {
-      labels: displayTimes.map(time => formatTime(time)),
-      datasets: [
-        {
-          data: displayValues,
-          color: (opacity = 1) => `${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`,
-          strokeWidth: 2,
-        },
-      ],
-    };
-    
-    const chartConfig = {
-      backgroundGradientFrom: '#1e2124',
-      backgroundGradientTo: '#1e2124',
-      decimalPlaces: precision,
-      color: (opacity = 1) => `${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`,
-      labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-      propsForDots: {
-        r: '5',
-        strokeWidth: '2',
-        stroke: color
-      },
-      propsForBackgroundLines: {
-        stroke: '#3a3f44',
-        strokeWidth: 1
-      },
-      propsForLabels: {
-        fontSize: 10,
-        fontWeight: 'normal'
-      }
-    };
-    
-    return (
-      <View style={styles.chartContainer}>
-        <LineChart
-          data={chartData}
-          width={screenWidth - 60}
-          height={100}
-          chartConfig={chartConfig}
-          bezier
-          withDots={true}
-          withShadow
-          withVerticalLines
-          withHorizontalLines
-          yAxisLabel=""
-          yAxisSuffix={` ${unit}`}
-          yLabelsOffset={10}
-          segments={3}
-          style={{
-            marginVertical: 4,
-            borderRadius: 12,
-          }}
-        />
-      </View>
-    );
+  const handleCardPress = () => {
+    // Karta tıklandığında ilgili detay sayfasına yönlendir
+    if (title === "Nabız") {
+      navigation.navigate('HeartRateDetail', { date: lastUpdated });
+    } else if (title === "Oksijen") {
+      navigation.navigate('OxygenLevelDetail', { date: lastUpdated });
+    }
   };
   
   const renderSleepData = () => {
@@ -217,9 +165,12 @@ const HealthMetricCard = ({
       </View>
     );
   };
+
+  // Kalp atış hızı ve oksijen seviyesi için detay sayfası gösterimi
+  const isDetailNavigable = title === "Nabız" || title === "Oksijen";
   
-  return (
-    <View style={styles.card}>
+  const renderCardContent = () => (
+    <>
       <View style={styles.header}>
         <View style={styles.titleContainer}>
           <Ionicons name={icon} size={20} color={color} />
@@ -251,13 +202,29 @@ const HealthMetricCard = ({
               </View>
             </View>
           )}
-          
-          {renderSleepData()}
-          {renderStepsData()}
         </View>
+        
+        {renderSleepData()}
+        {renderStepsData()}
       </View>
       
-      {renderChart()}
+      {isDetailNavigable && (
+        <View style={styles.detailPrompt}>
+          <Ionicons name="chevron-forward-circle" size={20} color={color} />
+          <Text style={[styles.detailPromptText, { color }]}>Detayları Görüntüle</Text>
+        </View>
+      )}
+    </>
+  );
+  
+  // Eğer tıklanabilir bir kart ise TouchableOpacity ile sarmala, değilse normal View döndür
+  return isDetailNavigable ? (
+    <TouchableOpacity style={styles.card} onPress={handleCardPress} activeOpacity={0.8}>
+      {renderCardContent()}
+    </TouchableOpacity>
+  ) : (
+    <View style={styles.card}>
+      {renderCardContent()}
     </View>
   );
 };
@@ -267,12 +234,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e2124',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
   header: {
     flexDirection: 'row',
@@ -285,38 +252,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 16,
-    fontWeight: 'bold',
     color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
     marginLeft: 8,
   },
   lastUpdated: {
-    fontSize: 12,
     color: '#aaa',
+    fontSize: 12,
   },
   content: {
-    flexDirection: 'row',
     alignItems: 'center',
   },
   valueContainer: {
-    marginRight: 16,
+    alignItems: 'center',
+    marginBottom: 8,
   },
   value: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
+    color: '#fff',
   },
   unit: {
     fontSize: 14,
     color: '#aaa',
-    marginTop: 2,
+    marginTop: 4,
+  },
+  progressTextContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  progressUnit: {
+    fontSize: 12,
+    color: '#aaa',
   },
   details: {
-    flex: 1,
-    marginLeft: 16,
+    width: '100%',
+    marginTop: 8,
   },
   minMaxContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: 8,
   },
   minMaxItem: {
     alignItems: 'center',
@@ -334,34 +316,26 @@ const styles = StyleSheet.create({
     marginTop: 16,
     alignItems: 'center',
   },
-  progressTextContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  progressUnit: {
-    fontSize: 10,
-    color: '#aaa',
-  },
   sleepDataContainer: {
-    marginTop: 8,
+    width: '100%',
+    marginTop: 12,
   },
   sleepQuality: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 8,
+    backgroundColor: 'rgba(30, 30, 30, 0.5)',
+    padding: 8,
+    borderRadius: 8,
   },
   sleepQualityLabel: {
-    fontSize: 12,
     color: '#aaa',
+    fontSize: 14,
   },
   sleepQualityValue: {
+    color: '#2ecc71',
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: 'bold',
   },
   sleepStages: {
     flexDirection: 'row',
@@ -372,37 +346,57 @@ const styles = StyleSheet.create({
     width: '48%',
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   sleepStageIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     marginRight: 6,
   },
   sleepStageLabel: {
-    fontSize: 11,
     color: '#aaa',
+    fontSize: 12,
     marginRight: 4,
   },
   sleepStageValue: {
-    fontSize: 11,
     color: '#fff',
-  },
-  extraDataContainer: {
-    marginTop: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  extraDataLabel: {
     fontSize: 12,
-    color: '#aaa',
-  },
-  extraDataValue: {
-    fontSize: 14,
-    color: '#fff',
     fontWeight: '500',
   },
+  extraDataContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    backgroundColor: 'rgba(30, 30, 30, 0.5)',
+    padding: 8,
+    borderRadius: 8,
+  },
+  extraDataLabel: {
+    color: '#aaa',
+    fontSize: 14,
+  },
+  extraDataValue: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  detailPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)'
+  },
+  detailPromptText: {
+    marginLeft: 5,
+    fontSize: 14,
+    fontWeight: '500'
+  }
 });
 
 export default HealthMetricCard; 

@@ -18,11 +18,15 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { signUp, signIn, autoSignIn } from 'aws-amplify/auth';
+import { generateClient } from 'aws-amplify/api';
 import { LinearGradient } from 'react-native-linear-gradient';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 
 // Logo importu
 const LogoImage = require('../assets/logo.png');
+
+// API client
+const client = generateClient();
 
 type RegisterScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -88,6 +92,66 @@ const RegisterScreen = () => {
     return text.replace(/[^+0-9]/g, '');
   };
 
+  // Kullanıcı verisini DynamoDB'ye kaydet
+  const saveUserToDataStore = async (userId: string) => {
+    // Temporarily disabled due to mutations import issue and authorization problems
+    return true;
+    /*
+    try {
+      // Users modeli için GraphQL şeması hazırlanmış olmalı
+      // mutations import edilmiş olmalı
+      const userDetails = {
+        id: userId,
+        email: email,
+        name: fullName,
+        phoneNumber: phoneNumber || null,
+        birthdate: birthdate || null,
+        // Diğer alanlar eklenebilir
+      };
+
+      // Eğer users modeliniz varsa:
+      // await client.graphql({
+      //   query: mutations.createUser,
+      //   variables: { input: userDetails }
+      // });
+      
+      // Şu anda users modeliniz yok gibi görünüyor, bunun yerine HealthData modeline
+      // kullanıcı için bir başlangıç kaydı oluşturabilirsiniz:
+      const now = new Date();
+      await client.graphql({
+        query: mutations.createHealthData,
+        variables: { 
+          input: {
+            userId: userId,
+            timestamp: now.toISOString(),
+            // Örnek sağlık verileri
+            heartRate: {
+              average: 0,
+              values: [],
+              times: [],
+              lastUpdated: now.toISOString(),
+              status: "initial"
+            },
+            oxygen: {
+              average: 0,
+              values: [],
+              times: [],
+              lastUpdated: now.toISOString(),
+              status: "initial"
+            }
+          }
+        }
+      });
+      
+      console.log('Kullanıcı verileri DynamoDB\'ye kaydedildi');
+      return true;
+    } catch (error) {
+      console.error('DynamoDB\'ye kullanıcı kaydı yapılırken hata oluştu:', error);
+      return false;
+    }
+    */
+  };
+
   const handleRegister = async () => {
     try {
       setError(null);
@@ -132,6 +196,11 @@ const RegisterScreen = () => {
       });
 
       console.log('Kayıt cevabı:', { isSignUpComplete, userId, nextStep });
+
+      // Kullanıcı verilerini DynamoDB'ye kaydet
+      if (userId) {
+        // await saveUserToDataStore(userId); // Commented out due to mutations import issue
+      }
 
       if (isSignUpComplete) {
         try {
