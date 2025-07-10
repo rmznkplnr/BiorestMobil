@@ -30,7 +30,7 @@ class HealthDataQueryServiceImpl implements HealthDataQueryService {
       // Kullanıcıya özel verileri sorgula
       const result = await client.graphql({
         query: listHealthDataByUserQuery,
-        variables: { userId: userAttributes.email }
+        variables: { username: userAttributes.email }
       });
 
       const healthData = (result as any).data?.listHealthData?.items || [];
@@ -62,7 +62,7 @@ class HealthDataQueryServiceImpl implements HealthDataQueryService {
 
       const result = await client.graphql({
         query: listHealthDataByUserQuery,
-        variables: { userId }
+        variables: { username: userId }
       });
 
       const healthData = (result as any).data?.listHealthData?.items || [];

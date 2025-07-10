@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
-import { Auth } from 'aws-amplify';
+import { signOut } from 'aws-amplify/auth';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 
@@ -30,7 +30,7 @@ const SettingsScreen = () => {
 
   const handleSignOut = async () => {
     try {
-      await Auth.signOut();
+      await signOut();
       navigation.reset({
         index: 0,
         routes: [{ name: 'Auth' }],
@@ -157,6 +157,13 @@ const SettingsScreen = () => {
               label: 'Sağlık Verilerini Senkronize Et',
               value: healthSyncEnabled,
               onToggle: setHealthSyncEnabled,
+            },
+            {
+              icon: 'watch-outline',
+              label: 'Mi Band 9 Bağlantısı',
+              rightIcon: 'chevron-forward',
+              description: 'Uyku sırasında nabız izleme',
+              onPress: () => navigation.navigate('MiBand9'),
             },
             {
               icon: 'refresh-outline',

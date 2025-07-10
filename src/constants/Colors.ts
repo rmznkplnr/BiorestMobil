@@ -38,10 +38,11 @@ export const Colors = {
   stress: '#E67E22',      // Stres seviyesi
   
   // Uyku aşama renkleri
-  sleepDeep: '#8E44AD',   // Derin uyku
-  sleepLight: '#3498DB',  // Hafif uyku
-  sleepREM: '#2ECC71',    // REM uykusu
-  sleepAwake: '#E74C3C',  // Uyanık
+ 
+  sleepDeep: '#6A0DAD',    // Mor - Derin
+  sleepLight: '#3498db',   // Açık mavi - Hafif
+  sleepREM: '#bc427d',     // Kırmızı - REM
+  sleepAwake: '#e67e22',   // Turuncu - Uyanık
   
   // Diğer
   transparent: 'transparent',

@@ -44,12 +44,54 @@ const HealthMetricCard = ({
 }: HealthMetricCardProps) => {
   const navigation = useNavigation<NavigationProp>();
   
-  const displayValue = typeof value === 'string' 
-    ? value 
-    : formatValue 
-      ? formatValue(value) 
-      : value.toLocaleString('tr-TR', { maximumFractionDigits: precision });
+  // Nabız ve Oksijen için en son değeri kullan
+  const getLatestValue = () => {
+    if (title === "Nabız" || title === "Oksijen") {
+      // Eğer values array'i varsa ve boş değilse en son değeri al
+      if (values && values.length > 0) {
+        const latestValue = values[values.length - 1];
+        console.log(`📊 ${title} - En son değer kullanılıyor:`, latestValue, 'toplam kayıt:', values.length);
+        return latestValue;
+      }
+      // Fallback olarak ortalama değeri kullan
+      console.log(`📊 ${title} - Values array boş, ortalama değer kullanılıyor:`, value);
+      return value;
+    }
+    // Diğer metrikler için normal value'yu kullan
+    return value;
+  };
   
+  const actualValue = getLatestValue();
+  
+  const displayValue = typeof actualValue === 'string' 
+    ? actualValue 
+    : formatValue 
+      ? formatValue(actualValue) 
+      : actualValue.toLocaleString('tr-TR', { maximumFractionDigits: precision });
+  
+  // En son ölçüm zamanını al
+  const getLatestTime = () => {
+    if ((title === "Nabız" || title === "Oksijen") && times && times.length > 0) {
+      const latestTime = times[times.length - 1];
+      console.log(`⏰ ${title} - En son ölçüm zamanı:`, latestTime);
+      return latestTime;
+    }
+    return lastUpdated;
+  };
+
+  // Nabız ve oksijen için gerçek min/max değerleri hesapla
+  const getMinMaxValues = () => {
+    if ((title === "Nabız" || title === "Oksijen") && values && values.length > 0) {
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      console.log(`📈 ${title} - Hesaplanan Min/Max:`, { min, max, toplam: values.length });
+      return { min, max };
+    }
+    return { min: minValue, max: maxValue };
+  };
+
+  const { min: actualMin, max: actualMax } = getMinMaxValues();
+
   const formatTime = (timeString?: string) => {
     if (!timeString) return '--:--';
     try {
@@ -61,9 +103,9 @@ const HealthMetricCard = ({
   };
   
   const renderProgressCircle = () => {
-    if (!goal || typeof value === 'string') return null;
+    if (!goal || typeof actualValue === 'string') return null;
     
-    const percentage = Math.min((value / goal) * 100, 100);
+    const percentage = Math.min((actualValue / goal) * 100, 100);
     
     return (
       <AnimatedCircularProgress
@@ -84,7 +126,7 @@ const HealthMetricCard = ({
   };
   
   const renderValueDisplay = () => {
-    if (goal && typeof value === 'number') return null;
+    if (goal && typeof actualValue === 'number') return null;
     
     return (
       <View style={styles.valueContainer}>
@@ -177,9 +219,9 @@ const HealthMetricCard = ({
           <Text style={styles.title}>{title}</Text>
         </View>
         
-        {lastUpdated && (
+        {(lastUpdated || getLatestTime()) && (
           <Text style={styles.lastUpdated}>
-            Son: {formatTime(lastUpdated)}
+            Son: {formatTime(getLatestTime())}
           </Text>
         )}
       </View>
@@ -189,17 +231,24 @@ const HealthMetricCard = ({
         {renderValueDisplay()}
         
         <View style={styles.details}>
-          {(minValue !== undefined && maxValue !== undefined) && (
+          {(actualMin !== undefined && actualMax !== undefined) && (
             <View style={styles.minMaxContainer}>
               <View style={styles.minMaxItem}>
                 <Text style={styles.minMaxLabel}>Min</Text>
-                <Text style={styles.minMaxValue}>{minValue}</Text>
+                <Text style={styles.minMaxValue}>{Math.round(actualMin)}</Text>
               </View>
               
               <View style={styles.minMaxItem}>
                 <Text style={styles.minMaxLabel}>Max</Text>
-                <Text style={styles.minMaxValue}>{maxValue}</Text>
+                <Text style={styles.minMaxValue}>{Math.round(actualMax)}</Text>
               </View>
+              
+              {(title === "Nabız" || title === "Oksijen") && values && values.length > 0 && (
+                <View style={styles.minMaxItem}>
+                  <Text style={styles.minMaxLabel}>Ölçüm</Text>
+                  <Text style={styles.minMaxValue}>{values.length}</Text>
+                </View>
+              )}
             </View>
           )}
         </View>

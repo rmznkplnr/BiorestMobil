@@ -109,13 +109,56 @@ const DevicesScreen = () => {
             }}
           >
             <View style={styles.devicesGrid}>
+              {/* Mi Band 9 Kartı */}
+              <Animated.View
+                style={{
+                  opacity: fadeAnim,
+                  transform: [{
+                    translateY: Animated.multiply(slideAnim, 1)
+                  }, {
+                    scale: Animated.add(0.9, Animated.multiply(scaleAnim, 0.1))
+                  }]
+                }}
+              >
+                <TouchableOpacity
+                  style={[styles.deviceCard, styles.miBandCard]}
+                  onPress={() => navigation.navigate('MiBand9')}
+                >
+                  <LinearGradient
+                    colors={['#9C27B0', '#673AB7']}
+                    style={styles.deviceGradient}
+                  >
+                    <View style={styles.deviceHeader}>
+                      <Ionicons 
+                        name="watch" 
+                        size={24} 
+                        color="#fff" 
+                      />
+                      <View style={styles.miBandBadge}>
+                        <Text style={styles.miBandBadgeText}>YENI</Text>
+                      </View>
+                    </View>
+                    <View style={styles.deviceInfo}>
+                      <Text style={styles.deviceName}>Mi Band 9</Text>
+                      <Text style={styles.deviceType}>
+                        Gerçek Zamanlı Uyku Nabız İzleme
+                      </Text>
+                      <Text style={styles.miBandFeature}>
+                        🌙 Uyku sırasında 30s aralıkla nabız ölçümü
+                      </Text>
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
+
+              {/* Mevcut Cihazlar */}
               {devices.map((device, index) => (
                 <Animated.View
                   key={device.id}
                   style={{
                     opacity: fadeAnim,
                     transform: [{
-                      translateY: Animated.multiply(slideAnim, 1 + (index * 0.15))
+                      translateY: Animated.multiply(slideAnim, 1 + ((index + 1) * 0.15))
                     }, {
                       scale: Animated.add(0.9, Animated.multiply(scaleAnim, 0.1))
                     }]
@@ -245,6 +288,27 @@ const styles = StyleSheet.create({
   deviceType: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.7)',
+  },
+  miBandCard: {
+    width: '100%',
+    marginBottom: 15,
+  },
+  miBandBadge: {
+    backgroundColor: '#f44336',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    alignSelf: 'flex-end',
+  },
+  miBandBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  miBandFeature: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 5,
   },
 });
 

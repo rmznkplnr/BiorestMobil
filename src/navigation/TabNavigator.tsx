@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { StyleSheet, Platform, TouchableOpacity, View, Text, Dimensions, Animated } from 'react-native';
+import { StyleSheet, Platform, TouchableOpacity, View, Text, Dimensions, Animated, Image } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { getCurrentUser } from 'aws-amplify/auth';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,6 +32,11 @@ interface TabBarButtonProps {
   onPress: () => void;
   iconColor: string;
   labelColor: string;
+}
+
+// Faunus Device Button Props tipi
+interface FaunusDeviceButtonProps {
+  navigation: any;
 }
 
 // TabBar düğmesi bileşeni
@@ -122,6 +127,78 @@ const TabBarButton = ({
   );
 };
 
+// Faunus Cihaz Butonu
+const FaunusDeviceButton = ({ navigation }: FaunusDeviceButtonProps) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const focusScaleAnim = useRef(new Animated.Value(1)).current;
+  const translateYAnim = useRef(new Animated.Value(0)).current;
+
+  // Focus animasyonu - diğer butonlar gibi
+  useEffect(() => {
+    // Sürekli focus efekti için
+    Animated.parallel([
+      Animated.spring(focusScaleAnim, {
+        toValue: 1.15, // Biraz daha büyük olsun
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+      Animated.spring(translateYAnim, {
+        toValue: -6, // Biraz daha yukarı kalksın
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [focusScaleAnim, translateYAnim]);
+
+  const handlePress = () => {
+    // Basma animasyonu - daha belirgin büyüme
+    Animated.sequence([
+      Animated.timing(scaleAnim, {
+        toValue: 1.5, // Önce büyüt
+        duration: 150,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1.15, // Sonra normale dön
+        duration: 150,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Devices sayfasına git
+    navigation.navigate('Devices');
+  };
+
+  return (
+    <TouchableOpacity
+      style={styles.faunusButton}
+      onPress={handlePress}
+      activeOpacity={0.8}
+    >
+      <Animated.View 
+        style={[
+          styles.faunusImageContainer,
+          {
+            transform: [
+              { scale: Animated.multiply(scaleAnim, focusScaleAnim) }, // İki animasyonu birleştir
+              { translateY: translateYAnim }
+            ]
+          }
+        ]}
+      >
+        <Image
+          source={require('../assets/ffanus.png')}
+          style={styles.faunusImage}
+          resizeMode="contain"
+        />
+        
+      </Animated.View>
+    </TouchableOpacity>
+  );
+};
+
 // Özel TabBar bileşeni
 const CustomTabBar = ({ state, descriptors, navigation }: any) => {
   const insets = useSafeAreaInsets();
@@ -148,88 +225,58 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
     ]}>
       <View style={styles.tabBarBackground} />
       <View style={styles.tabButtonsRow}>
-        {state.routes.map((route: any, index: number) => {
-          const { options } = descriptors[route.key];
-          
-          const label = options.tabBarLabel || options.title || route.name;
-          const focused = state.index === index;
-          
-          // İkon renklerini ve etiketleri belirleyin
-          const iconColor = focused ? theme.colors.primary.light : theme.colors.text.tertiary;
-          const labelColor = focused ? theme.colors.primary.light : theme.colors.text.tertiary;
-          
-          // Mağaza butonu için özel stil
-          const isStoreButton = route.name === 'Store';
-
-          // sağlık butonu için özel still
-          const isHealthButton = route.name === 'HealthData';
-
-          
-          // Her sekme için doğru ikonu belirleyin
-          let iconName = '';
-          if (route.name === 'Home') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Devices') {
-            iconName = focused ? 'bluetooth' : 'bluetooth-outline';
-          } else if (route.name === 'HealthData') {
-            iconName = focused ? 'heart' : 'heart-outline';
-          } else if (route.name === 'Store') {
-            iconName = focused ? 'cart' : 'cart-outline';
-          } else if (route.name === 'Profile') {
-            iconName = focused ? 'person' : 'person-outline';
-          }
-          
-          // Sekmye dokunulduğunda gerçekleşecek işlev
-          const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
-            
-            if (!focused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
-            }
-          };
-
-          return isStoreButton ? (
-            <TabBarButton
-              key={route.key}
-              focused={focused}
-              iconName={iconName}
-              label={label}
-              iconColor={focused ? '#059669' : 'rgba(55, 168, 18, 0.7)'}
-              labelColor={focused ? '#059669' : 'rgba(55, 168, 18, 0.7)'}
-              onPress={onPress}
-            />
-          ) : isHealthButton ? (
-            <TabBarButton
-              key={route.key}
-              focused={focused}
-              iconName={iconName}
-              label={label}
-              iconColor={focused ? '#dc2626' : 'rgba(239, 68, 68, 0.7)'} 
-              labelColor={focused ? '#dc2626' : 'rgba(239, 68, 68, 0.7)'}
-              onPress={onPress}
-            />
-          ) : (
-            <TabBarButton
-              key={route.key}
-              focused={focused}
-              iconName={iconName}
-              label={label}
-              iconColor={iconColor}
-              labelColor={labelColor}
-              onPress={onPress}
-            />
-          );
-        })}
-      </View>
+        {/* İlk tab: Home */}
+        <TabBarButton
+          key="home"
+          focused={state.index === 0}
+          iconName={state.index === 0 ? 'home' : 'home-outline'}
+          label="Ana Sayfa"
+          iconColor={state.index === 0 ? theme.colors.primary.light : theme.colors.text.tertiary}
+          labelColor={state.index === 0 ? theme.colors.primary.light : theme.colors.text.tertiary}
+          onPress={() => navigation.navigate('Home')}
+        />
+        
+        {/* İkinci tab: Health */}
+        <TabBarButton
+          key="health"
+          focused={state.index === 1}
+          iconName={state.index === 1 ? 'heart' : 'heart-outline'}
+          label="Sağlık"
+          iconColor={state.index === 1 ? '#dc2626' : 'rgba(239, 68, 68, 0.7)'}
+          labelColor={state.index === 1 ? '#dc2626' : 'rgba(239, 68, 68, 0.7)'}
+          onPress={() => navigation.navigate('HealthData')}
+        />
+        
+        {/* Üçüncü tab: Faunus Cihaz Resmi (ortada) */}
+        <FaunusDeviceButton navigation={navigation} />
+        
+        {/* Dördüncü tab: Store */}
+        <TabBarButton
+          key="store"
+          focused={state.index === 2}
+          iconName={state.index === 2 ? 'cart' : 'cart-outline'}
+          label="Mağaza"
+          iconColor={state.index === 2 ? '#059669' : 'rgba(55, 168, 18, 0.7)'}
+          labelColor={state.index === 2 ? '#059669' : 'rgba(55, 168, 18, 0.7)'}
+          onPress={() => navigation.navigate('Store')}
+        />
+        
+        {/* Beşinci tab: Profile */}
+        <TabBarButton
+          key="profile"
+          focused={state.index === 3}
+          iconName={state.index === 3 ? 'person' : 'person-outline'}
+          label="Profil"
+          iconColor={state.index === 3 ? theme.colors.primary.light : theme.colors.text.tertiary}
+          labelColor={state.index === 3 ? theme.colors.primary.light : theme.colors.text.tertiary}
+          onPress={() => navigation.navigate('Profile')}
+        />
+             </View>
     </View>
   );
 };
 
-// Ana TabNavigator bileşeni
+// Ana TabNavigator bileşeni (DevicesScreen'i hala dahil ediyoruz çünkü Faunus button'u oraya yönlendiriyor)
 const TabNavigator = () => {
   const navigation = useNavigation<TabNavigatorNavigationProp>();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -298,10 +345,18 @@ const TabNavigator = () => {
       tabBar={(props) => <CustomTabBar {...props} />}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Devices" component={DevicesScreen} />
       <Tab.Screen name="HealthData" component={HealthDataScreen} options={{ title: 'Sağlık' }} />
       <Tab.Screen name="Store" component={StoreScreen} options={{ title: 'Mağaza' }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profil' }} />
+      {/* Hidden tab - sadece Faunus button'undan erişilebilir */}
+      <Tab.Screen 
+        name="Devices" 
+        component={DevicesScreen} 
+        options={{ 
+          title: 'Cihazlar',
+          tabBarStyle: { display: 'none' } // Tab bar'da görünmez
+        }} 
+      />
     </Tab.Navigator>
   );
 };
@@ -338,6 +393,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingTop: 8,
+    zIndex: 2, // Faunus butonundan daha yüksek öncelik
   },
   tabIconContainer: {
     flexDirection: 'column',
@@ -367,6 +423,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     includeFontPadding: false,
   },
+  faunusButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80, // Sabit genişlik - sadece resim alanı
+    height: 60, // Sabit yükseklik - sadece resim alanı 
+    zIndex: 1, // Diğer butonlarla çakışma olmasın
+    marginTop: 8, // Üstten boşluk
+  },
+  faunusImageContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 80, // Tam resim alanı
+    height: 60, // Tam resim alanı
+    overflow: 'hidden', // Taşan kısmı kes
+  },
+  faunusImage: {
+    width: 200, // Container ile aynı genişlik
+    height: 150, // Container ile aynı yükseklik
+    resizeMode: 'contain', // Resmin oranını koru
+    // tintColor kaldırıldı - orijinal renkleri kullanacak
+  },
+
 });
 
 export default TabNavigator; 

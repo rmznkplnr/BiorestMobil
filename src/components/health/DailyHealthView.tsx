@@ -88,7 +88,7 @@ const DailyHealthView: React.FC<DailyHealthViewProps> = ({ onDataLoaded, isActiv
   // Uyku detay sayfasına yönlendirme işlemi
   const navigateToSleepDetail = useCallback(() => {
     if (healthData && healthData.sleep) {
-      navigation.navigate('SleepDetails', { sleepData: healthData.sleep });
+              navigation.navigate('SleepDetailsScreen', { sleepData: healthData.sleep });
     }
   }, [navigation, healthData]);
 

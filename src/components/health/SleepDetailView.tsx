@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, ActivityIndicator, ScrollView } from 'react-native';
 import { format, parseISO } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -7,6 +7,7 @@ import { BarChart } from 'react-native-chart-kit';
 import { Dimensions } from 'react-native';
 import type { SleepMetric } from '../../types/health';
 import { Colors } from '../../constants/Colors';
+import { sleepDetailStyles as styles } from '../../styles/SleepDetailViewStyles';
 
 interface SleepDetailViewProps {
   sleepData?: SleepMetric;
@@ -26,13 +27,19 @@ const SleepDetailView: React.FC<SleepDetailViewProps> = ({
     if (!dateString) return null;
     
     try {
-      // ISO formatındaki tarihler için parseISO kullan
-      if (dateString.includes('T') && dateString.includes('Z')) {
-        return parseISO(dateString);
-      }
+      console.log('🕐 Tarih dönüştürülüyor:', dateString);
       
-      // Farklı formatlar için normal Date constructor'ı kullan
-      const date = new Date(dateString);
+      let date: Date;
+      
+      // ISO formatındaki tarihler için parseISO kullan
+      if (dateString.includes('T')) {
+        date = parseISO(dateString);
+        console.log('🕐 ISO tarih ayrıştırıldı:', date.toISOString(), 'Lokal saat:', date.toLocaleString('tr-TR'));
+      } else {
+        // Farklı formatlar için normal Date constructor'ı kullan
+        date = new Date(dateString);
+        console.log('🕐 Normal tarih ayrıştırıldı:', date.toISOString(), 'Lokal saat:', date.toLocaleString('tr-TR'));
+      }
       
       // Geçerli bir tarih mi kontrol et
       if (isNaN(date.getTime())) {
@@ -85,6 +92,12 @@ const SleepDetailView: React.FC<SleepDetailViewProps> = ({
           sleepData.light || 0, 
           sleepData.rem || 0, 
           sleepData.awake || 0
+        ],
+        colors: [
+          () => Colors.sleepDeep,
+          () => Colors.sleepLight,
+          () => Colors.sleepREM,
+          () => Colors.sleepAwake,
         ],
       }
     ]
@@ -174,7 +187,16 @@ const SleepDetailView: React.FC<SleepDetailViewProps> = ({
             <Text style={styles.timingValue}>
               {(() => {
                 const startDate = createSafeDate(sleepData.startTime);
-                return startDate ? format(startDate, 'HH:mm', { locale: tr }) : 'Bilinmiyor';
+                if (!startDate) return 'Bilinmiyor';
+                
+                // Türkiye saatine göre formatla
+                const timeString = startDate.toLocaleTimeString('tr-TR', { 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  hour12: false 
+                });
+                console.log('🕐 Uyku başlangıç formatlandı:', timeString);
+                return timeString;
               })()}
             </Text>
           </View>
@@ -187,7 +209,16 @@ const SleepDetailView: React.FC<SleepDetailViewProps> = ({
             <Text style={styles.timingValue}>
               {(() => {
                 const endDate = createSafeDate(sleepData.endTime);
-                return endDate ? format(endDate, 'HH:mm', { locale: tr }) : 'Bilinmiyor';
+                if (!endDate) return 'Bilinmiyor';
+                
+                // Türkiye saatine göre formatla
+                const timeString = endDate.toLocaleTimeString('tr-TR', { 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  hour12: false 
+                });
+                console.log('🕐 Uyanma saati formatlandı:', timeString);
+                return timeString;
               })()}
             </Text>
           </View>
@@ -252,6 +283,41 @@ const SleepDetailView: React.FC<SleepDetailViewProps> = ({
         </View>
       </View>
       
+      {/* Uyku Nabız İstatistikleri */}
+      {sleepData.sleepHeartRate && (
+        <View style={styles.heartRateContainer}>
+          <View style={styles.heartRateHeader}>
+            <Ionicons name="heart" size={20} color={Colors.error} />
+            <Text style={styles.sectionTitle}>Uyku Sırasında Nabız</Text>
+          </View>
+          
+          <View style={styles.heartRateStats}>
+            <View style={styles.heartRateStat}>
+              <Text style={styles.heartRateStatLabel}>Ortalama</Text>
+              <Text style={[styles.heartRateStatValue, { color: Colors.error }]}>
+                {Math.round(sleepData.sleepHeartRate.average)} BPM
+              </Text>
+            </View>
+            
+            <View style={styles.heartRateStat}>
+              <Text style={styles.heartRateStatLabel}>En Düşük</Text>
+              <Text style={styles.heartRateStatValue}>
+                {sleepData.sleepHeartRate.min} BPM
+              </Text>
+            </View>
+            
+            <View style={styles.heartRateStat}>
+              <Text style={styles.heartRateStatLabel}>En Yüksek</Text>
+              <Text style={styles.heartRateStatValue}>
+                {sleepData.sleepHeartRate.max} BPM
+              </Text>
+            </View>
+          </View>
+          
+          
+        </View>
+      )}
+      
       {/* İpuçları */}
       {sleepData.status && (
         <View style={styles.tipsContainer}>
@@ -284,191 +350,24 @@ const SleepDetailView: React.FC<SleepDetailViewProps> = ({
         <Text style={styles.lastUpdated}>
           Son güncelleme: {(() => {
             const updateDate = createSafeDate(sleepData.lastUpdated);
-            return updateDate ? format(updateDate, 'd MMMM HH:mm', { locale: tr }) : 'Bilinmiyor';
+            if (!updateDate) return 'Bilinmiyor';
+            
+            // Türkiye saatine göre formatla
+            const dateString = updateDate.toLocaleDateString('tr-TR', { 
+              day: 'numeric', 
+              month: 'long' 
+            });
+            const timeString = updateDate.toLocaleTimeString('tr-TR', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: false 
+            });
+            return `${dateString} ${timeString}`;
           })()}
         </Text>
       )}
     </ScrollView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-    padding: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    color: Colors.text,
-    marginTop: 10,
-  },
-  noDataContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  noDataText: {
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 16,
-    fontSize: 15,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerTitle: {
-    color: Colors.text,
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginLeft: 10,
-  },
-  summaryContainer: {
-    flexDirection: 'row',
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  summaryValue: {
-    color: Colors.text,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  summaryDescription: {
-    fontSize: 14,
-    fontWeight: 'normal',
-  },
-  divider: {
-    width: 1,
-    backgroundColor: Colors.divider,
-    marginHorizontal: 10,
-  },
-  timingContainer: {
-    flexDirection: 'row',
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  timingItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  timingLabel: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    marginVertical: 5,
-  },
-  timingValue: {
-    color: Colors.text,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  timingDivider: {
-    width: 1,
-    backgroundColor: Colors.divider,
-    marginHorizontal: 10,
-  },
-  chartContainer: {
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    color: Colors.text,
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    alignSelf: 'flex-start',
-  },
-  chart: {
-    marginTop: 8,
-    borderRadius: 16,
-  },
-  stagesContainer: {
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  stageRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
-  },
-  stageIndicator: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 10,
-  },
-  stageLabel: {
-    color: Colors.text,
-    fontSize: 14,
-    flex: 1,
-  },
-  stageValue: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    marginRight: 10,
-  },
-  stagePercent: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: 'bold',
-    width: 40,
-    textAlign: 'right',
-  },
-  tipsContainer: {
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  tipsTitle: {
-    color: Colors.text,
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  tipsContent: {
-    backgroundColor: 'rgba(52, 152, 219, 0.1)',
-    borderRadius: 8,
-    padding: 12,
-  },
-  tipText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  lastUpdated: {
-    color: Colors.textMuted,
-    fontSize: 12,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-});
 
 export default SleepDetailView; 

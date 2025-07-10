@@ -46,6 +46,15 @@ export interface SleepMetric extends BaseHealthMetric {
   
   // Farklı veri yapılarıyla uyumluluk için alternatif alanlar
   sleepScore?: number;    // Uyku puanı (isteğe bağlı)
+  
+  // Uyku sırasındaki nabız verileri (Mi Fitness'tan)
+  sleepHeartRate?: {
+    average: number;      // Uyku ortalama nabız
+    min: number;          // Uyku minimum nabız
+    max: number;          // Uyku maksimum nabız
+    values: number[];     // Uyku nabız değerleri
+    times: string[];      // Uyku nabız zamanları
+  };
 }
 
 

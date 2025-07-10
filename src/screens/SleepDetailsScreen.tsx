@@ -12,24 +12,20 @@ import {
   Platform,
   Dimensions,
 } from 'react-native';
-import { LineChart } from 'react-native-chart-kit';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { RouteProp } from '@react-navigation/native';
-import Svg, { Path, Line } from 'react-native-svg';
 import { format, parseISO } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { SleepMetric } from '../types/health';
 import SleepDetailView from '../components/health/SleepDetailView';
 
 type SleepDetailsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
-  'SleepDetails'
+  'SleepDetailsScreen'
 >;
 
-type SleepDetailsScreenRouteProp = RouteProp<RootStackParamList, 'SleepDetails'>;
+type SleepDetailsScreenRouteProp = RouteProp<RootStackParamList, 'SleepDetailsScreen'>;
 
 interface Props {
   navigation: SleepDetailsScreenNavigationProp;

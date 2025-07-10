@@ -103,6 +103,38 @@ export const fetchHealthDataForDate = async (date: Date): Promise<HealthData | n
           });
           // Uyku verisini güncelle
           healthConnectData.sleep = properSleepData;
+          
+          // 🛌❤️ Uyku sırasındaki nabız verilerini al
+          try {
+            const sleepHeartRateData = await HealthConnectService.getSleepHeartRateData(
+              startTimeStr, 
+              endTimeStr, 
+              properSleepData.startTime, 
+              properSleepData.endTime
+            );
+            
+            if (sleepHeartRateData.sleepHeartRateAverage > 0) {
+              console.log('🛌❤️ Uyku sırasında nabız verisi bulundu:', {
+                ortalama: sleepHeartRateData.sleepHeartRateAverage,
+                min: Math.min(...sleepHeartRateData.values),
+                max: Math.max(...sleepHeartRateData.values),
+                ölçümSayısı: sleepHeartRateData.values.length
+              });
+              
+              // Uyku verisine nabız bilgisini ekle
+              properSleepData.sleepHeartRate = {
+                average: sleepHeartRateData.sleepHeartRateAverage,
+                min: Math.min(...sleepHeartRateData.values),
+                max: Math.max(...sleepHeartRateData.values),
+                values: sleepHeartRateData.values,
+                times: sleepHeartRateData.times
+              };
+              
+              healthConnectData.sleep = properSleepData;
+            }
+          } catch (sleepHeartRateError) {
+            console.error('🛌❤️ Uyku nabız verisi alınamadı:', sleepHeartRateError);
+          }
         }
         
         healthData = healthConnectData;

@@ -273,6 +273,92 @@ class HealthConnectService {
     }
   }
 
+  /**
+   * UYKU SIRASINDA NABIZ VERİSİ AL (Mi Fitness'tan)
+   * Bu fonksiyon uyku zamanı aralığında olan nabız verilerini filtreler
+   */
+  static async getSleepHeartRateData(startDateStr: string, endDateStr: string, sleepStartTime?: string, sleepEndTime?: string): Promise<{
+    values: number[];
+    times: string[];
+    average: number;
+    min: number;
+    max: number;
+    sleepHeartRateAverage: number;
+  }> {
+    if (Platform.OS !== 'android') {
+      console.log('Health Connect sadece Android platformunda desteklenir');
+      return this.getEmptyData('heartRate');
+    }
+    
+    try {
+      console.log('🛌 Uyku sırasındaki nabız verileri alınıyor...');
+      
+      // Normal nabız verilerini al
+      const heartRateResponse = await this.readHealthConnectRecords('HeartRate', startDateStr, endDateStr);
+      if (!heartRateResponse) {
+        console.log('🛌 Nabız verisi bulunamadı');
+        return this.getEmptyData('heartRate');
+      }
+
+      const heartRateRecords = this.parseHealthConnectResponse<HealthRecord>(heartRateResponse);
+      
+      const allValues: number[] = [];
+      const allTimes: string[] = [];
+      const sleepValues: number[] = [];
+      const sleepTimes: string[] = [];
+      
+      // Tüm nabız verilerini topla
+      heartRateRecords.forEach((record) => {
+        if (record.samples && Array.isArray(record.samples)) {
+          record.samples.forEach((sample) => {
+            if (sample.beatsPerMinute && sample.time) {
+              allValues.push(sample.beatsPerMinute);
+              allTimes.push(sample.time);
+              
+              // Eğer uyku zamanı aralığı verilmişse filtrele
+              if (sleepStartTime && sleepEndTime) {
+                const sampleTime = new Date(sample.time);
+                const sleepStart = new Date(sleepStartTime);
+                const sleepEnd = new Date(sleepEndTime);
+                
+                // Uyku zamanı aralığında mı kontrol et
+                if (sampleTime >= sleepStart && sampleTime <= sleepEnd) {
+                  sleepValues.push(sample.beatsPerMinute);
+                  sleepTimes.push(sample.time);
+                }
+              }
+            }
+          });
+        }
+      });
+      
+      // Uyku nabız verilerini kullan (varsa), yoksa tüm verileri kullan
+      const targetValues = sleepValues.length > 0 ? sleepValues : allValues;
+      const targetTimes = sleepTimes.length > 0 ? sleepTimes : allTimes;
+      
+      const sleepHeartRateAverage = targetValues.length > 0 ? 
+        Math.round(targetValues.reduce((a, b) => a + b, 0) / targetValues.length) : 0;
+      
+      console.log(`🛌 Uyku nabız analizi:
+      • Toplam nabız ölçümü: ${allValues.length}
+      • Uyku sırasında nabız ölçümü: ${targetValues.length}
+      • Uyku ortalama nabız: ${sleepHeartRateAverage} BPM
+      • Uyku nabız aralığı: ${targetValues.length > 0 ? Math.min(...targetValues) + ' - ' + Math.max(...targetValues) : 'N/A'} BPM`);
+      
+      return {
+        values: targetValues,
+        times: targetTimes,
+        average: allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0,
+        max: allValues.length > 0 ? Math.max(...allValues) : 0,
+        min: allValues.length > 0 ? Math.min(...allValues) : 0,
+        sleepHeartRateAverage
+      };
+    } catch (error) {
+      console.error('🛌 Uyku nabız verisi alınırken hata:', error);
+      return this.getEmptyData('heartRate');
+    }
+  }
+
   static async getStepsData(startDateStr: string, endDateStr: string): Promise<number> {
     if (Platform.OS !== 'android') {
       console.log('Health Connect sadece Android platformunda desteklenir');

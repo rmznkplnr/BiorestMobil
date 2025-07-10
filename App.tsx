@@ -18,6 +18,7 @@ import { DeviceProvider } from './src/context/DeviceContext';
 import { Alert, Text, View, ActivityIndicator, StyleSheet } from 'react-native';
 import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import MiBand9Screen from './src/screens/MiBand9Screen';
 
 // Amplify Gen2 konfigürasyonu
 import { Amplify } from 'aws-amplify';
@@ -98,10 +99,11 @@ const App = () => {
               <Stack.Screen name="Main" component={TabNavigator} />
               <Stack.Screen name="DeviceManagement" component={DeviceManagementScreen} />
               <Stack.Screen name="DeviceDetail" component={DeviceDetailScreen} />
+              <Stack.Screen name="MiBand9" component={MiBand9Screen} />
               <Stack.Screen name="HealthData" component={HealthDataScreen} />
               <Stack.Screen name="HeartRateDetail" component={HeartRateDetailScreen} />
               <Stack.Screen name="OxygenLevelDetail" component={OxygenLevelDetailScreen} />
-              <Stack.Screen name="SleepDetails" component={SleepDetailsScreen} />
+              <Stack.Screen name="SleepDetailsScreen" component={SleepDetailsScreen} />
               <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />
             </Stack.Navigator>

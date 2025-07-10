@@ -44,9 +44,10 @@ export interface SleepMetrics {
     // Device Screens
     DeviceManagement: undefined;
     DeviceDetail: { deviceId: string };
+    MiBand9: undefined;
     
     // Sleep Screens
-    SleepDetails: { sleepData: SleepMetric };
+    SleepDetailsScreen: { sleepData: SleepMetric };
     
     // Health Screens
     HealthData: undefined;

@@ -1,13 +1,40 @@
-type HealthData @model @auth(rules: [{allow: public}]) {
-  id: ID!
-  userId: String!
-  oksijen: Int
-  nabiz: Int
-  topuykusuresi: Int
+type KaloriEntry {
+  zaman: AWSDateTime
+  deger: Int
+}
+
+type AdimEntry {
+  zaman: AWSDateTime
+  deger: Int
+}
+
+type UykuEntry {
+  start: AWSDateTime
+  end: AWSDateTime
+  derin: Int
   rem: Int
   hafif: Int
-  adim: Int
-  kalori: Int
-  derin: Int
+  toplam: Int
+}
+
+type NabizEntry {
+  zaman: AWSDateTime
+  deger: Int
+}
+
+type OksijenEntry {
+  zaman: AWSDateTime
+  deger: Int
+}
+
+type HealthData @model @auth(rules: [{allow: public}]) {
+  id: ID!
+  tarih: AWSDate
+  username: String
+  nabiz: [NabizEntry]
+  oksijen: [OksijenEntry]
+  uyku: [UykuEntry]
+  kalori: [KaloriEntry]
+  adim: [AdimEntry]
 }
  

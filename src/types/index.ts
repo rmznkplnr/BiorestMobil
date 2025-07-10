@@ -1,7 +1,7 @@
-import type { HealthData, HeartRateMetric, OxygenMetric, SleepMetric, StressMetric, ActivityMetric } from './health';
+import type { HealthData, HeartRateMetric, OxygenMetric, SleepMetric, ActivityMetric } from './health';
 
 // Genel uygulama tipleri için bir ihracat
-export type { HealthData, HeartRateMetric, OxygenMetric, SleepMetric, StressMetric, ActivityMetric };
+export type { HealthData, HeartRateMetric, OxygenMetric, SleepMetric, ActivityMetric };
 
 // Sağlık durumu belirten tip (geriye dönük uyumluluk)
 export type HealthStatus = 'normal' | 'caution' | 'danger' | 'unknown';
