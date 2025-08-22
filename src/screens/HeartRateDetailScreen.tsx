@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   StatusBar,
   TouchableOpacity,
@@ -19,6 +18,7 @@ import { LineChart, BarChart } from 'react-native-chart-kit';
 import { AnimatedCircularProgress } from 'react-native-circular-progress';
 import * as HealthDataService from '../services/HealthDataService';
 import { format } from 'date-fns';
+import { heartRateDetailStyles as styles } from '../styles/HeartRateDetailScreenStyles';
 
 type HeartRateDetailScreenRouteProp = RouteProp<RootStackParamList, 'HeartRateDetail'>;
 type HeartRateDetailScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -29,14 +29,64 @@ const HeartRateDetailScreen = () => {
   const [loading, setLoading] = useState(true);
   const [heartRateData, setHeartRateData] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [chartType, setChartType] = useState<'bar' | 'line' | 'gauge' | 'simple'>('bar');
+  const [chartType, setChartType] = useState<'bar' | 'line' | 'gauge' | 'simple'>('line');
   
   // Seçili tarih için sağlık verilerini çek
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Eğer route.params'den tarih gelirse onu kullan
+        // 🛌 UYKU MODU KONTROLÜ: Eğer uyku nabız verisi gelirse direkt kullan
+        if (route.params?.sleepMode && route.params?.sleepHeartRate) {
+          console.log('🛌 Uyku nabız modu aktif, doğrudan veri kullanılıyor');
+          
+          const sleepHeartRate = route.params.sleepHeartRate;
+          
+          // Uyku nabız verilerini formatla - DAHA AZ VERİ
+          const allChartData = sleepHeartRate.values || [];
+          const allChartTimes = sleepHeartRate.times || [];
+          
+          // Uyku için her 10. veriyi al (çok fazla veri var)
+          const sampledData: number[] = [];
+          const sampledTimes: string[] = [];
+          
+          for (let i = 0; i < allChartData.length; i += 10) {
+            sampledData.push(allChartData[i]);
+            if (allChartTimes[i]) {
+              sampledTimes.push(allChartTimes[i]);
+            }
+          }
+          
+          // Maksimum 20 nokta ile sınırla
+          const chartData = sampledData.slice(0, 20);
+          const chartTimes = sampledTimes.slice(0, 20);
+          
+          // Zaman etiketlerini minimal tut (sadece birkaç tane)
+          const timeLabels = chartTimes.length > 4 
+            ? ['', '', '', '', ''] // Boş etiketler
+            : chartTimes.map(() => ''); // Tüm etiketler boş
+          
+          console.log(`🛌 Uyku nabız örneklendi: ${allChartData.length} → ${chartData.length} nokta`);
+          
+          setHeartRateData({
+            average: Math.floor(sleepHeartRate.average || 0),
+            min: sleepHeartRate.min || 0,
+            max: sleepHeartRate.max || 0,
+            chartData,
+            timeLabels,
+            originalData: allChartData,
+            totalReadings: allChartData.length,
+            hasRealData: chartData.length > 0,
+            sleepMode: true,
+            sleepStartTime: route.params.sleepStartTime,
+            sleepEndTime: route.params.sleepEndTime
+          });
+          
+          setLoading(false);
+          return;
+        }
+        
+        // Normal mod: Eğer route.params'den tarih gelirse onu kullan
         const dateToUse = route.params?.date ? new Date(route.params.date) : selectedDate;
         
         console.log('Nabız verisi çekiliyor, tarih:', dateToUse.toLocaleDateString());
@@ -132,7 +182,7 @@ const HeartRateDetailScreen = () => {
     return { category: 'Normal', color: '#2ecc71', icon: 'checkmark-circle' };
   };
 
-  const screenWidth = Dimensions.get('window').width - 40;
+  const screenWidth = Dimensions.get('window').width - 60; // chartSection (40px) + chartContainer (20px) padding
   const currentCategory = heartRateData ? getHeartRateCategory(heartRateData.average) : null;
 
   // Grafik konfigürasyonu
@@ -177,28 +227,47 @@ const HeartRateDetailScreen = () => {
       case 'bar':
         return (
           <View>
-                         <BarChart
+            <LineChart
                data={{
-                 labels: heartRateData.timeLabels,
+                labels: heartRateData.timeLabels.map(() => ''), // Zaman etiketlerini kaldır
                  datasets: [{
-                   data: heartRateData.chartData
+                  data: heartRateData.chartData,
+                  color: (opacity = 1) => `rgba(231, 76, 60, ${opacity})`,
+                  strokeWidth: 3
                  }]
                }}
                width={screenWidth}
                height={250}
-               yAxisLabel=""
-               yAxisSuffix=" BPM"
                chartConfig={{
                  ...chartConfig,
-                 fillShadowGradient: '#e74c3c',
-                 fillShadowGradientOpacity: 0.8,
+                propsForDots: {
+                  r: '8', // Daha büyük noktalar
+                  strokeWidth: '3',
+                  stroke: '#e74c3c',
+                  fill: '#e74c3c'
+                },
+                propsForLabels: {
+                  fontSize: 0 // Alt etiketleri gizle
+                }
                }}
                style={styles.chart}
+              withDots={true}
+              withShadow={false}
+              withInnerLines={false}
+              withOuterLines={false}
+              withHorizontalLabels={false} // Alt zaman etiketlerini kaldır
+              withVerticalLabels={true} // Sol nabız değerlerini göster
+              bezier={false} // Düz çizgiler
+              yAxisSuffix=" BPM"
                fromZero={false}
-               showValuesOnTopOfBars={true}
              />
             <View style={styles.chartLegend}>
-              <Text style={styles.legendText}>Son 5 ölçüm gösteriliyor</Text>
+              <Text style={styles.legendText}>
+                {heartRateData.sleepMode 
+                  ? `${heartRateData.totalReadings} ölçümden ${heartRateData.chartData.length} nokta örneklemesi`
+                  : 'Son 5 ölçüm gösteriliyor'
+                }
+              </Text>
             </View>
           </View>
         );
@@ -290,7 +359,10 @@ const HeartRateDetailScreen = () => {
 
             <View style={styles.simpleInfo}>
               <Text style={styles.simpleInfoText}>
-                Toplam {heartRateData.totalReadings} ölçümden son 5'i gösteriliyor
+                {heartRateData.sleepMode 
+                  ? `Toplam ${heartRateData.totalReadings} ölçümden ${heartRateData.chartData.length} nokta örneklemesi`
+                  : `Toplam ${heartRateData.totalReadings} ölçümden son 5'i gösteriliyor`
+                }
               </Text>
             </View>
           </View>
@@ -305,21 +377,40 @@ const HeartRateDetailScreen = () => {
                 datasets: [{
                   data: heartRateData.chartData,
                   color: (opacity = 1) => `rgba(231, 76, 60, ${opacity})`,
-                  strokeWidth: 3
+                  strokeWidth: 0 // Çizgileri kaldır, sadece noktalar kalsın
                 }]
               }}
               width={screenWidth}
               height={250}
-              chartConfig={chartConfig}
-              bezier
+              chartConfig={{
+                ...chartConfig,
+                // Uyku modu için özel ayarlar
+                propsForDots: heartRateData.sleepMode ? {
+                  r: '5',
+                  strokeWidth: '2',
+                  stroke: '#e74c3c',
+                  fill: '#e74c3c'
+                } : chartConfig.propsForDots,
+                propsForLabels: {
+                  fontSize: heartRateData.sleepMode ? 0 : 12 // Uyku modunda etiket yok
+                }
+              }}
+              bezier={!heartRateData.sleepMode} // Uyku modunda düz çizgi
               style={styles.chart}
               withDots={true}
               withShadow={false}
-              withInnerLines={true}
+              withInnerLines={!heartRateData.sleepMode} // Uyku modunda iç çizgi yok
               withOuterLines={false}
+              withHorizontalLabels={!heartRateData.sleepMode} // Uyku modunda alt etiket yok
+              withVerticalLabels={true}
             />
             <View style={styles.chartLegend}>
-              <Text style={styles.legendText}>Son 5 ölçüm trendi</Text>
+              <Text style={styles.legendText}>
+                {heartRateData.sleepMode 
+                  ? `${heartRateData.totalReadings} ölçümden ${heartRateData.chartData.length} nokta örneklemesi`
+                  : 'Son 5 ölçüm trendi'
+                }
+              </Text>
             </View>
           </View>
         );
@@ -367,7 +458,9 @@ const HeartRateDetailScreen = () => {
           >
             <Ionicons name="chevron-back" size={28} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Kalp Atış Hızı</Text>
+          <Text style={styles.headerTitle}>
+            {heartRateData?.sleepMode ? 'Uyku Nabız Detayları' : 'Kalp Atış Hızı'}
+          </Text>
           <TouchableOpacity 
             style={styles.chartTypeButton}
             onPress={cycleChartType}
@@ -446,7 +539,9 @@ const HeartRateDetailScreen = () => {
             {/* Modern Grafik */}
             <View style={styles.chartSection}>
               <View style={styles.chartHeader}>
-                <Text style={styles.chartTitle}>Günlük Değişim</Text>
+                <Text style={styles.chartTitle}>
+                  {heartRateData?.sleepMode ? 'Uyku Sırasında Nabız' : 'Günlük Değişim'}
+                </Text>
                 <View style={styles.chartTypeIndicator}>
                   <Text style={styles.chartTypeText}>{getChartTypeName()}</Text>
                 </View>
@@ -463,6 +558,25 @@ const HeartRateDetailScreen = () => {
 
               {heartRateData.hasRealData && (
                 <View style={styles.chartTips}>
+                  {heartRateData.sleepMode ? (
+                    // Uyku nabzı için aralıklar
+                    <>
+                      <View style={styles.tipItem}>
+                        <View style={[styles.tipDot, { backgroundColor: '#2ecc71' }]} />
+                        <Text style={styles.tipText}>İdeal Uyku: 40-80 BPM</Text>
+                      </View>
+                      <View style={styles.tipItem}>
+                        <View style={[styles.tipDot, { backgroundColor: '#f39c12' }]} />
+                        <Text style={styles.tipText}>Yüksek: 80+ BPM</Text>
+                      </View>
+                      <View style={styles.tipItem}>
+                        <View style={[styles.tipDot, { backgroundColor: '#3498db' }]} />
+                        <Text style={styles.tipText}>Çok Düşük: &lt;40 BPM</Text>
+                      </View>
+                    </>
+                  ) : (
+                    // Normal nabız için aralıklar
+                    <>
                   <View style={styles.tipItem}>
                     <View style={[styles.tipDot, { backgroundColor: '#2ecc71' }]} />
                     <Text style={styles.tipText}>Normal: 60-100 BPM</Text>
@@ -475,43 +589,39 @@ const HeartRateDetailScreen = () => {
                     <View style={[styles.tipDot, { backgroundColor: '#e74c3c' }]} />
                     <Text style={styles.tipText}>Yüksek: &gt;100 BPM</Text>
                   </View>
+                    </>
+                  )}
                 </View>
               )}
             </View>
 
-            {/* Sağlık Aralıkları */}
-            <View style={styles.rangesSection}>
-              <Text style={styles.sectionTitle}>Kalp Atış Hızı Aralıkları</Text>
-              <View style={styles.rangesList}>
-                <View style={styles.rangeItem}>
-                  <View style={[styles.rangeDot, { backgroundColor: '#3498db' }]} />
-                  <Text style={styles.rangeText}>Düşük: &lt; 60 BPM</Text>
-                  <Text style={styles.rangeDescription}>Bradikardi</Text>
-                </View>
-                <View style={styles.rangeItem}>
-                  <View style={[styles.rangeDot, { backgroundColor: '#2ecc71' }]} />
-                  <Text style={styles.rangeText}>Normal: 60-100 BPM</Text>
-                  <Text style={styles.rangeDescription}>Sağlıklı aralık</Text>
-                </View>
-                <View style={styles.rangeItem}>
-                  <View style={[styles.rangeDot, { backgroundColor: '#e74c3c' }]} />
-                  <Text style={styles.rangeText}>Yüksek: &gt; 100 BPM</Text>
-                  <Text style={styles.rangeDescription}>Taşikardi</Text>
-                </View>
-              </View>
-            </View>
+           
 
             {/* Bilgi Kartı */}
             <View style={styles.infoCard}>
               <View style={styles.infoHeader}>
                 <Ionicons name="information-circle" size={24} color="#3498db" />
-                <Text style={styles.infoTitle}>Kalp Sağlığı İpuçları</Text>
+                <Text style={styles.infoTitle}>
+                  {heartRateData?.sleepMode ? 'Uyku Nabız İpuçları' : 'Kalp Sağlığı İpuçları'}
+                </Text>
               </View>
               <Text style={styles.infoText}>
-                • Düzenli egzersiz kalp atış hızınızı iyileştirir{'\n'}
-                • Yeterli uyku kalp sağlığı için önemlidir{'\n'}
-                • Stres kalp atış hızını artırabilir{'\n'}
-                • Kafein ve nikotin geçici olarak nabzı hızlandırır
+                {heartRateData?.sleepMode ? (
+                  // Uyku nabzı ipuçları
+                  '• Normal uyku nabzı 40-80 BPM arasında olmalıdır\n' +
+                  '• Derin uyku sırasında nabız daha da düşer\n' +
+                  '• Uyku kalitesi nabız stabilitesini etkiler\n' +
+                  '• Alkol ve kafein uyku nabzını artırabilir\n' +
+                  (heartRateData.sleepStartTime && heartRateData.sleepEndTime ? 
+                    `• Uyku süresi: ${format(new Date(heartRateData.sleepStartTime), 'HH:mm')} - ${format(new Date(heartRateData.sleepEndTime), 'HH:mm')}` 
+                    : '')
+                ) : (
+                  // Normal nabız ipuçları
+                  '• Düzenli egzersiz kalp atış hızınızı iyileştirir\n' +
+                  '• Yeterli uyku kalp sağlığı için önemlidir\n' +
+                  '• Stres kalp atış hızını artırabilir\n' +
+                  '• Kafein ve nikotin geçici olarak nabzı hızlandırır'
+                )}
               </Text>
             </View>
           </ScrollView>
@@ -520,360 +630,5 @@ const HeartRateDetailScreen = () => {
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#000'
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#000'
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)'
-  },
-  backButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)'
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-    textAlign: 'center'
-  },
-  chartTypeButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(231, 76, 60, 0.2)'
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  loadingText: {
-    color: '#fff',
-    fontSize: 16,
-    marginTop: 16
-  },
-  scrollView: {
-    flex: 1,
-    backgroundColor: '#000'
-  },
-  summaryContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    marginBottom: 10
-  },
-  primaryCard: {
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 15,
-    position: 'relative'
-  },
-  primaryCardContent: {
-    alignItems: 'center'
-  },
-  primaryValue: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginTop: 10
-  },
-  primaryUnit: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: -5
-  },
-  primaryLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.9)',
-    marginTop: 5
-  },
-  categoryBadge: {
-    position: 'absolute',
-    top: 15,
-    right: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 15
-  },
-  categoryText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 5
-  },
-  secondaryCards: {
-    flexDirection: 'row',
-    justifyContent: 'space-between'
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 15,
-    padding: 15,
-    marginHorizontal: 3,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)'
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginTop: 8
-  },
-  statLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
-    marginTop: 4
-  },
-  chartSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20
-  },
-  chartHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15
-  },
-  chartTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff'
-  },
-  chartTypeIndicator: {
-    backgroundColor: 'rgba(231, 76, 60, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15
-  },
-  chartTypeText: {
-    color: '#e74c3c',
-    fontSize: 12,
-    fontWeight: '600'
-  },
-  chartContainer: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 20,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)'
-  },
-  chartBackground: {
-    borderRadius: 20
-  },
-  chartTips: {
-    padding: 20,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 15,
-    marginTop: 20
-  },
-  tipItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10
-  },
-  tipDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 10
-  },
-  tipText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500'
-  },
-  rangesSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 15
-  },
-  rangesList: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 15,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)'
-  },
-  rangeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10
-  },
-  rangeDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 12
-  },
-  rangeText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1
-  },
-  rangeDescription: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 12
-  },
-  infoCard: {
-    marginHorizontal: 20,
-    marginBottom: 30,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 15,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)'
-  },
-  infoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginLeft: 10
-  },
-  infoText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14,
-    lineHeight: 22
-  },
-  noDataContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  noDataTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginTop: 16
-  },
-  noDataText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14,
-    textAlign: 'center',
-    marginHorizontal: 20
-  },
-  gaugeContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  gaugeWrapper: {
-    width: '80%',
-    height: '80%',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  gaugeCenter: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -50 }, { translateY: -50 }],
-    textAlign: 'center'
-  },
-  gaugeValue: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#fff'
-  },
-  gaugeUnit: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: -5
-  },
-  gaugeCategory: {
-    fontSize: 14,
-    color: '#fff',
-    fontWeight: '600'
-  },
-  gaugeDescription: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 10
-  },
-  simpleChart: {
-    flex: 1,
-    padding: 20
-  },
-  simpleTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 20
-  },
-     simpleValues: {
-     flexDirection: 'column',
-     marginBottom: 20
-   },
-   simpleValueItem: {
-     marginBottom: 15
-   },
-  simpleLabel: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14,
-    marginBottom: 5
-  },
-     simpleBar: {
-     width: '100%',
-     height: 8,
-     backgroundColor: 'rgba(255,255,255,0.2)',
-     borderRadius: 4,
-     marginVertical: 5
-   },
-   simpleBarFill: {
-     height: '100%',
-     borderRadius: 4
-   },
-  simpleValue: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold'
-  },
-  simpleInfo: {
-    alignItems: 'center'
-  },
-  simpleInfoText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14
-  },
-  chart: {
-    borderRadius: 16
-  },
-  chartLegend: {
-    alignItems: 'center',
-    marginTop: 10
-  },
-  legendText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 14
-  }
-});
 
 export default HeartRateDetailScreen; 

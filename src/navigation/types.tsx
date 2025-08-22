@@ -31,33 +31,31 @@ export interface SleepMetrics {
   }
   
   export type RootStackParamList = {
-    // Auth Screens
+    Onboarding: undefined;
     Auth: undefined;
     Register: undefined;
-    ConfirmAccount: { email: string };
-    ForgotPassword: undefined;
-    ResetPassword: { email: string };
-    
-    // Main App Screens
+    ConfirmAccount: undefined;
     Main: undefined;
-    
-    // Device Screens
     DeviceManagement: undefined;
     DeviceDetail: { deviceId: string };
-    MiBand9: undefined;
-    
-    // Sleep Screens
-    SleepDetailsScreen: { sleepData: SleepMetric };
-    
-    // Health Screens
+    MiBand3: undefined;
     HealthData: undefined;
-    HeartRateDetail: { date?: string };
-    OxygenLevelDetail: { date?: string };
-
-    // Store Screens
-    ProductDetail: { productId: string };
-
-    // Settings Screen
+    HeartRateDetail: {
+      date: string;
+      sleepHeartRate?: {
+        average: number;
+        min: number;
+        max: number;
+        values: number[];
+        times: string[];
+      };
+      sleepMode?: boolean;
+      sleepStartTime?: string;
+      sleepEndTime?: string;
+    };
+    OxygenLevelDetail: { date: string };
+    SleepDetailsScreen: undefined;
+    ProductDetail: undefined;
     Settings: undefined;
   };
   

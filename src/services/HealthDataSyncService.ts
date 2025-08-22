@@ -653,6 +653,137 @@ class HealthDataSyncServiceImpl implements HealthDataSyncService {
       return false;
     }
   }
+
+  /**
+   * Amplify bağlantısını ve senkronizasyonu test etmek için basit test fonksiyonu
+   */
+  async testAmplifyConnection(): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      console.log('🧪 Amplify bağlantı testi başlatılıyor...');
+      
+      // 1. Kullanıcı kimlik doğrulaması kontrol
+      try {
+        const currentUser = await getCurrentUser();
+        const userAttributes = await fetchUserAttributes();
+        
+        if (!currentUser || !userAttributes.email) {
+          return {
+            success: false,
+            message: 'Kullanıcı giriş yapmamış veya email eksik',
+            details: { currentUser: !!currentUser, email: !!userAttributes?.email }
+          };
+        }
+        
+        console.log('✅ Kullanıcı kimlik doğrulaması başarılı:', userAttributes.email);
+        
+      } catch (authError) {
+        return {
+          success: false,
+          message: 'Kullanıcı kimlik doğrulama hatası',
+          details: authError
+        };
+      }
+      
+      // 2. GraphQL Query testi - mevcut verileri listele
+      try {
+        const userAttributes = await fetchUserAttributes();
+        
+        const queryResult = await client.graphql({
+          query: listHealthDataByUser,
+          variables: { username: userAttributes.email }
+        });
+        
+        const graphqlResult = queryResult as any;
+        const items = graphqlResult?.data?.listHealthData?.items || [];
+        
+        console.log('✅ GraphQL Query başarılı, bulunan kayıt sayısı:', items.length);
+        
+      } catch (queryError) {
+        return {
+          success: false,
+          message: 'GraphQL Query hatası',
+          details: queryError
+        };
+      }
+      
+      // 3. Test verisi oluşturma - basit bir health data kaydı
+      try {
+        const userAttributes = await fetchUserAttributes();
+        const now = new Date();
+        const today = now.toISOString().split('T')[0]; // YYYY-MM-DD
+        
+                 const testData: CreateHealthDataInput = {
+           tarih: today,
+           username: userAttributes.email!,
+          nabiz: [{
+            zaman: now.toISOString(),
+            deger: 75 // Test nabız değeri
+          }]
+        };
+        
+        const createResult = await client.graphql({
+          query: createHealthDataMutation,
+          variables: { input: testData }
+        });
+        
+        const createdRecord = (createResult as any).data?.createHealthData;
+        
+        if (createdRecord) {
+          console.log('✅ Test verisi oluşturma başarılı, ID:', createdRecord.id);
+          
+          // Test verisini temizle
+          try {
+            await client.graphql({
+              query: `
+                mutation DeleteHealthData($input: DeleteHealthDataInput!) {
+                  deleteHealthData(input: $input) {
+                    id
+                  }
+                }
+              `,
+              variables: {
+                input: { id: createdRecord.id }
+              }
+            });
+            console.log('✅ Test verisi temizlendi');
+          } catch (deleteError) {
+            console.log('⚠️ Test verisi temizlenemedi (önemli değil):', deleteError);
+          }
+          
+          return {
+            success: true,
+            message: 'Amplify senkronizasyon sistemi tam çalışır durumda',
+            details: {
+              userEmail: userAttributes.email,
+              createdRecordId: createdRecord.id,
+              timestamp: now.toISOString()
+            }
+          };
+          
+        } else {
+          return {
+            success: false,
+            message: 'Test verisi oluşturulamadı',
+            details: createResult
+          };
+        }
+        
+      } catch (createError) {
+        return {
+          success: false,
+          message: 'Test verisi oluşturma hatası',
+          details: createError
+        };
+      }
+      
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Genel Amplify test hatası',
+        details: error
+      };
+    }
+  }
 }
 
 export const healthDataSyncService = new HealthDataSyncServiceImpl();

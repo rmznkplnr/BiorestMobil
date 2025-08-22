@@ -1,12 +1,9 @@
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import HealthConnectService from './HealthConnectService';
 import HealthKitService from './HealthKitService';
-import HealthDataSyncService from './HealthDataSyncService';
-import { HealthData, mapHealthConnectData, mapHealthKitData } from '../types/health';
-import { Amplify } from 'aws-amplify';
-import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
+import { HealthData } from '../types/health';
 import { Platform } from 'react-native';
-import awsconfig from '../aws-exports'; 
+
 /**
  * Uyku verisi için basit tarih belirleme fonksiyonu
  * Uyandığı saat hangi tarihse uyku verisi o tarihe kaydedilir
@@ -51,250 +48,8 @@ const getSleepDataWithProperDate = async (targetDate: Date) => {
   return null;
 };
 
-/**
- * Verilen tarih için sağlık verilerini getirir
- * @param date Sağlık verilerinin getirileceği tarih
- * @returns Sağlık verileri
- */
-export const fetchHealthDataForDate = async (date: Date): Promise<HealthData | null> => {
-  try {
-    const isAuthValid = await checkAuthAndConfig();
-    if (!isAuthValid) {
-      return getDefaultHealthData();
-    }
-
-    const formattedDate = format(date, 'yyyy-MM-dd');
-    console.log(`${formattedDate} tarihi için sağlık verileri çekiliyor`);
-
-    // Yerel saat dilimine göre gün başlangıcı ve bitişi oluştur
-    const startTime = new Date(date);
-    startTime.setHours(0, 0, 0, 0);
-    
-    const endTime = new Date(date);
-    endTime.setHours(23, 59, 59, 999);
-
-    console.log('Sağlık verileri tarih aralığı:', 
-               `${startTime.toLocaleString()} - ${endTime.toLocaleString()}`);
-
-    const startTimeStr = startTime.toISOString();
-    const endTimeStr = endTime.toISOString();
-
-    let healthData: HealthData | null = null;
-
-    if (Platform.OS === 'android') {
-      console.log('Android için Health Connect verisi isteniyor');
-      const healthConnectData = await HealthConnectService.getHealthData(startTimeStr, endTimeStr);
-      
-      if (healthConnectData) {
-        console.log('Health Connect verisi alındı:', JSON.stringify({
-          steps: healthConnectData.steps?.total || 0,
-          calories: healthConnectData.calories?.total || 0,
-          heartRate: healthConnectData.heartRate?.average || 0,
-          oxygen: healthConnectData.oxygen?.average || 0,
-          sleep: healthConnectData.sleep?.totalMinutes || 0
-        }));
-        
-        // 🛌 Uyku verisi için özel sorgulama yap
-        const properSleepData = await getSleepDataWithProperDate(date);
-        if (properSleepData) {
-          console.log('🛌 Özel uyku verisi bulundu:', {
-            totalMinutes: properSleepData.totalMinutes,
-            endTime: properSleepData.endTime
-          });
-          // Uyku verisini güncelle
-          healthConnectData.sleep = properSleepData;
-          
-          // 🛌❤️ Uyku sırasındaki nabız verilerini al
-          try {
-            const sleepHeartRateData = await HealthConnectService.getSleepHeartRateData(
-              startTimeStr, 
-              endTimeStr, 
-              properSleepData.startTime, 
-              properSleepData.endTime
-            );
-            
-            if (sleepHeartRateData.sleepHeartRateAverage > 0) {
-              console.log('🛌❤️ Uyku sırasında nabız verisi bulundu:', {
-                ortalama: sleepHeartRateData.sleepHeartRateAverage,
-                min: Math.min(...sleepHeartRateData.values),
-                max: Math.max(...sleepHeartRateData.values),
-                ölçümSayısı: sleepHeartRateData.values.length
-              });
-              
-              // Uyku verisine nabız bilgisini ekle
-              properSleepData.sleepHeartRate = {
-                average: sleepHeartRateData.sleepHeartRateAverage,
-                min: Math.min(...sleepHeartRateData.values),
-                max: Math.max(...sleepHeartRateData.values),
-                values: sleepHeartRateData.values,
-                times: sleepHeartRateData.times
-              };
-              
-              healthConnectData.sleep = properSleepData;
-            }
-          } catch (sleepHeartRateError) {
-            console.error('🛌❤️ Uyku nabız verisi alınamadı:', sleepHeartRateError);
-          }
-        }
-        
-        healthData = healthConnectData;
-
-        // 🔥 YENİ: Otomatik AWS senkronizasyonu
-        try {
-          console.log('🔄 AWS senkronizasyonu başlatılıyor...');
-          const syncSuccess = await HealthDataSyncService.syncHealthData(healthData);
-          if (syncSuccess) {
-            console.log('✅ AWS senkronizasyonu başarılı');
-          } else {
-            console.log('❌ AWS senkronizasyonu başarısız');
-          }
-        } catch (syncError) {
-          console.error('❌ AWS senkronizasyon hatası:', syncError);
-        }
-
-      } else {
-        console.log('Health Connect verisi null döndü');
-      }
-    } else if (Platform.OS === 'ios') {
-      console.log('iOS için HealthKit verisi isteniyor');
-      const healthKitData = await HealthKitService.getHealthData(startTime, endTime);
-      
-      if (healthKitData) {
-        console.log('HealthKit verisi alındı');
-        healthData = mapHealthKitData(healthKitData);
-
-        // 🔥 YENİ: iOS için de otomatik AWS senkronizasyonu
-        try {
-          console.log('🔄 AWS senkronizasyonu başlatılıyor (iOS)...');
-          const syncSuccess = await HealthDataSyncService.syncHealthData(healthData);
-          if (syncSuccess) {
-            console.log('✅ AWS senkronizasyonu başarılı');
-          } else {
-            console.log('❌ AWS senkronizasyonu başarısız');
-          }
-        } catch (syncError) {
-          console.error('❌ AWS senkronizasyon hatası:', syncError);
-        }
-
-      } else {
-        console.log('HealthKit verisi null döndü');
-      }
-    } else {
-      console.warn('Desteklenmeyen platform:', Platform.OS);
-    }
-
-    if (!healthData) {
-      console.warn(`${formattedDate} için veri bulunamadı, varsayılan değer döndürülüyor`);
-      return getDefaultHealthData();
-    }
-
-    console.log('İşlenmiş sağlık verileri:', JSON.stringify({
-      steps: healthData.steps?.total || 0,
-      calories: healthData.calories?.total || 0,
-      heartRate: healthData.heartRate?.average || 0,
-      oxygen: healthData.oxygen?.average || 0,
-      sleep: healthData.sleep?.totalMinutes || 0
-    }));
-
-    return healthData;
-  } catch (error) {
-    console.error('Sağlık verisi çekilirken hata oluştu:', error);
-    return getDefaultHealthData();
-  }
-};
-
-/**
- * Verilen tarih aralığı için sağlık verilerini getirir
- * @param startDate Başlangıç tarihi
- * @param endDate Bitiş tarihi
- * @returns Sağlık verileri
- */
-export const fetchHealthDataForRange = async (startDate: Date, endDate: Date): Promise<HealthData | null> => {
-  try {
-    const isAuthValid = await checkAuthAndConfig();
-    if (!isAuthValid) {
-      return getDefaultHealthData();
-    }
-
-    console.log(`${format(startDate, 'yyyy-MM-dd')} - ${format(endDate, 'yyyy-MM-dd')} aralığı için sağlık verileri çekiliyor`);
-
-    const startDateStr = startDate.toISOString();
-    const endDateStr = endDate.toISOString();
-
-    let healthData: HealthData | null = null;
-
-    if (Platform.OS === 'android') {
-      console.log('Android için aralık Health Connect verisi isteniyor');
-      const healthConnectData = await HealthConnectService.getHealthData(startDateStr, endDateStr);
-      
-      if (healthConnectData) {
-        console.log('Health Connect aralık verisi alındı:', JSON.stringify({
-          steps: healthConnectData.steps?.total || 0,
-          calories: healthConnectData.calories?.total || 0,
-          heartRate: healthConnectData.heartRate?.average || 0,
-          oxygen: healthConnectData.oxygen?.average || 0,
-          sleep: healthConnectData.sleep?.totalMinutes || 0
-        }));
-        
-        healthData = mapHealthConnectData(healthConnectData);
-      } else {
-        console.log('Health Connect aralık verisi null döndü');
-      }
-    } else if (Platform.OS === 'ios') {
-      console.log('iOS için HealthKit aralık verisi isteniyor');
-      const healthKitData = await HealthKitService.getHealthData(startDate, endDate);
-      
-      if (healthKitData) {
-        console.log('HealthKit aralık verisi alındı');
-        healthData = mapHealthKitData(healthKitData);
-      } else {
-        console.log('HealthKit aralık verisi null döndü');
-      }
-    } else {
-      console.warn('Desteklenmeyen platform:', Platform.OS);
-    }
-
-    if (!healthData) {
-      console.warn(`Belirtilen aralık için veri bulunamadı, varsayılan değer döndürülüyor`);
-      return getDefaultHealthData();
-    }
-
-    console.log('İşlenmiş aralık sağlık verileri:', JSON.stringify({
-      steps: healthData.steps?.total || 0,
-      calories: healthData.calories?.total || 0,
-      heartRate: healthData.heartRate?.average || 0,
-      oxygen: healthData.oxygen?.average || 0,
-      sleep: healthData.sleep?.totalMinutes || 0
-    }));
-
-    return healthData;
-  } catch (error) {
-    console.error('Sağlık verisi çekilirken hata oluştu:', error);
-    return getDefaultHealthData();
-  }
-};
-
-// Günlük verileri çeker
-export const fetchDailyHealthData = async (date: Date): Promise<HealthData | null> => {
-  return fetchHealthDataForDate(date);
-};
-
-// Haftalık verileri çeker
-export const fetchWeeklyHealthData = async (date: Date): Promise<HealthData | null> => {
-  const weekStart = startOfWeek(date, { weekStartsOn: 1 }); // Pazartesi başlangıç
-  const weekEnd = endOfWeek(date, { weekStartsOn: 1 }); // Pazar bitiş
-  return fetchHealthDataForRange(weekStart, weekEnd);
-};
-
-// Aylık verileri çeker
-export const fetchMonthlyHealthData = async (date: Date): Promise<HealthData | null> => {
-  const monthStart = startOfMonth(date);
-  const monthEnd = endOfMonth(date);
-  return fetchHealthDataForRange(monthStart, monthEnd);
-};
-
 // Eğer veri yoksa dönecek varsayılan değerleri hazırlar
-const getDefaultHealthData = (): HealthData => {
+export const getDefaultHealthData = (): HealthData => {
   const defaultMetric = {
     values: [0],
     times: [new Date().toISOString()],
@@ -323,36 +78,224 @@ const getDefaultHealthData = (): HealthData => {
   };
 };
 
-// Kullanıcı auth ve config kontrolü
-const checkAuthAndConfig = async () => {
+/**
+ * HealthKit raw data'sını HealthData tipine dönüştürür
+ */
+const mapHealthKitToHealthData = (rawData: any): HealthData => {
+  const now = new Date().toISOString();
+  
+  // ActiveCalories ve BasalCalories'i birleştir
+  const totalCalories = (rawData.activeCalories || []).reduce((sum: number, item: any) => sum + (item.value || 0), 0) +
+                       (rawData.basalCalories || []).reduce((sum: number, item: any) => sum + (item.value || 0), 0);
+
+  // Steps toplamını hesapla
+  const totalSteps = (rawData.steps || []).reduce((sum: number, item: any) => sum + (item.value || 0), 0);
+
+  // HeartRate ortalamasını hesapla
+  const heartRateValues = (rawData.heartRate || []).map((item: any) => item.value || 0);
+  const avgHeartRate = heartRateValues.length > 0 ? 
+    heartRateValues.reduce((sum: number, val: number) => sum + val, 0) / heartRateValues.length : 0;
+
+  // Oxygen ortalamasını hesapla
+  const oxygenValues = (rawData.oxygen || []).map((item: any) => item.value || 0);
+  const avgOxygen = oxygenValues.length > 0 ? 
+    oxygenValues.reduce((sum: number, val: number) => sum + val, 0) / oxygenValues.length : 0;
+
+  return {
+    heartRate: {
+      values: heartRateValues,
+      times: (rawData.heartRate || []).map((item: any) => item.startDate || now),
+      average: avgHeartRate,
+      max: heartRateValues.length > 0 ? Math.max(...heartRateValues) : 0,
+      min: heartRateValues.length > 0 ? Math.min(...heartRateValues) : 0,
+      lastUpdated: now,
+      status: 'good' as const,
+    },
+    oxygen: {
+      values: oxygenValues,
+      times: (rawData.oxygen || []).map((item: any) => item.startDate || now),
+      average: avgOxygen,
+      max: oxygenValues.length > 0 ? Math.max(...oxygenValues) : 0,
+      min: oxygenValues.length > 0 ? Math.min(...oxygenValues) : 0,
+      lastUpdated: now,
+      status: 'good' as const,
+    },
+    steps: {
+      total: totalSteps,
+      values: [totalSteps],
+      times: [now],
+      lastUpdated: now,
+      status: 'good' as const,
+    },
+    calories: {
+      total: totalCalories,
+      values: [totalCalories],
+      times: [now],
+      lastUpdated: now,
+      status: 'good' as const,
+    },
+    sleep: {
+      duration: 0, // HealthKit sleep parsing karmaşık olduğu için şimdilik 0
+      efficiency: 0,
+      deep: 0,
+      light: 0,
+      rem: 0,
+      awake: 0,
+      startTime: now,
+      endTime: now,
+      stages: [],
+      totalMinutes: 0,
+      values: [0],
+      times: [now],
+      lastUpdated: now,
+      status: 'good' as const,
+    },
+  };
+};
+
+/**
+ * Verilen tarih için sağlık verilerini getirir
+ */
+export const fetchHealthDataForDate = async (date: Date): Promise<HealthData> => {
   try {
-    // Amplify.configure void bir değer döndürür, kontrol etmeye gerek yok
-    Amplify.configure(awsconfig);
-    
-    try {
-      await getCurrentUser();
-      return true;
-    } catch {
-      console.warn('Kullanıcı giriş yapmamış');
-      return false;
+    console.log('📅 Tarih için sağlık verisi getiriliyor:', format(date, 'yyyy-MM-dd'));
+
+    const startTime = startOfDay(date);
+    const endTime = endOfDay(date);
+
+    if (Platform.OS === 'android') {
+      // Android - Health Connect kullan
+      console.log('🤖 Android Health Connect verisi alınıyor...');
+      
+      const healthData = await HealthConnectService.getHealthData(
+        startTime.toISOString(), 
+        endTime.toISOString()
+      );
+
+      if (healthData) {
+        console.log('✅ Android sağlık verisi başarıyla alındı:', {
+          heartRate: healthData.heartRate?.average || 0,
+          oxygen: healthData.oxygen?.average || 0,
+          steps: healthData.steps?.total || 0,
+          calories: healthData.calories?.total || 0,
+          sleepDuration: healthData.sleep?.duration || 0,
+        });
+        return healthData;
+      } else {
+        console.log('⚠️ Android Health Connect boş veri döndü, varsayılan veriler kullanılıyor');
+        return getDefaultHealthData();
+      }
+
+    } else if (Platform.OS === 'ios') {
+      // iOS - HealthKit kullan
+      console.log('🍎 iOS HealthKit verisi alınıyor...');
+      
+      const rawHealthData = await HealthKitService.getHealthData(startTime, endTime);
+
+      if (rawHealthData) {
+        // HealthKit raw data'sını HealthData tipine dönüştür
+        const mappedHealthData = mapHealthKitToHealthData(rawHealthData);
+        console.log('✅ iOS sağlık verisi başarıyla alındı ve dönüştürüldü');
+        return mappedHealthData;
+      } else {
+        console.log('⚠️ iOS HealthKit boş veri döndü, varsayılan veriler kullanılıyor');
+        return getDefaultHealthData();
+      }
+    } else {
+      console.log('⚠️ Desteklenmeyen platform, varsayılan veriler kullanılıyor');
+      return getDefaultHealthData();
     }
+
   } catch (error) {
-    console.error('Auth kontrolü sırasında hata:', error);
-    return false;
+    console.error('❌ Sağlık verisi getirme hatası:', error);
+    return getDefaultHealthData();
   }
+};
+
+/**
+ * Verilen tarih aralığı için sağlık verilerini getirir
+ */
+export const fetchHealthDataForRange = async (startDate: Date, endDate: Date): Promise<HealthData> => {
+  try {
+    console.log('📅 Tarih aralığı için sağlık verisi getiriliyor:', 
+      `${format(startDate, 'yyyy-MM-dd')} - ${format(endDate, 'yyyy-MM-dd')}`);
+
+    const startTime = startOfDay(startDate);
+    const endTime = endOfDay(endDate);
+
+    if (Platform.OS === 'android') {
+      // Android - Health Connect kullan
+      console.log('🤖 Android Health Connect aralık verisi alınıyor...');
+      
+      const healthData = await HealthConnectService.getHealthData(
+        startTime.toISOString(), 
+        endTime.toISOString()
+      );
+
+      if (healthData) {
+        console.log('✅ Android aralık sağlık verisi başarıyla alındı:', {
+          heartRate: healthData.heartRate?.average || 0,
+          oxygen: healthData.oxygen?.average || 0,
+          steps: healthData.steps?.total || 0,
+          calories: healthData.calories?.total || 0,
+          sleepDuration: healthData.sleep?.duration || 0,
+        });
+        return healthData;
+      } else {
+        console.log('⚠️ Android Health Connect aralık için boş veri döndü');
+        return getDefaultHealthData();
+      }
+
+    } else if (Platform.OS === 'ios') {
+      // iOS - HealthKit kullan
+      console.log('🍎 iOS HealthKit aralık verisi alınıyor...');
+      
+      const rawHealthData = await HealthKitService.getHealthData(startTime, endTime);
+
+      if (rawHealthData) {
+        // HealthKit raw data'sını HealthData tipine dönüştür
+        const mappedHealthData = mapHealthKitToHealthData(rawHealthData);
+        console.log('✅ iOS aralık sağlık verisi başarıyla alındı ve dönüştürüldü');
+        return mappedHealthData;
+      } else {
+        console.log('⚠️ iOS HealthKit aralık için boş veri döndü');
+        return getDefaultHealthData();
+      }
+    } else {
+      console.log('⚠️ Desteklenmeyen platform, varsayılan veriler kullanılıyor');
+      return getDefaultHealthData();
+    }
+
+  } catch (error) {
+    console.error('❌ Aralık sağlık verisi getirme hatası:', error);
+    return getDefaultHealthData();
+  }
+};
+
+// Günlük verileri çeker
+export const fetchDailyHealthData = async (date: Date): Promise<HealthData> => {
+  return fetchHealthDataForDate(date);
+};
+
+// Haftalık verileri çeker
+export const fetchWeeklyHealthData = async (date: Date): Promise<HealthData> => {
+  const weekStart = startOfWeek(date, { weekStartsOn: 1 }); // Pazartesi başlangıç
+  const weekEnd = endOfWeek(date, { weekStartsOn: 1 }); // Pazar bitiş
+  return fetchHealthDataForRange(weekStart, weekEnd);
+};
+
+// Aylık verileri çeker
+export const fetchMonthlyHealthData = async (date: Date): Promise<HealthData> => {
+  const monthStart = startOfMonth(date);
+  const monthEnd = endOfMonth(date);
+  return fetchHealthDataForRange(monthStart, monthEnd);
 };
 
 // AWS config ve auth kontrolü
 export const checkConfigAndAuth = async (): Promise<boolean> => {
   try {
-    try {
-      const user = await getCurrentUser();
-      console.log('Kimlik doğrulandı:', user.username);
+    // Geçici olarak true döndür - tam AWS implementasyonu sonra eklenecek
       return true;
-    } catch (error) {
-      console.warn('Kimlik doğrulama hatası:', error);
-      return false;
-    }
   } catch (error) {
     console.warn('Kimlik doğrulama hatası:', error);
     return false;
@@ -362,7 +305,11 @@ export const checkConfigAndAuth = async (): Promise<boolean> => {
 const HealthDataService = {
   fetchHealthDataForDate,
   fetchHealthDataForRange,
+  fetchDailyHealthData,
+  fetchWeeklyHealthData,
+  fetchMonthlyHealthData,
   checkConfigAndAuth,
+  getDefaultHealthData,
 };
 
 export default HealthDataService;

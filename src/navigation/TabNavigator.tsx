@@ -11,6 +11,7 @@ import DevicesScreen from '../screens/DevicesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import HealthDataScreen from '../screens/HealthDataScreen';
 import StoreScreen from '../screens/StoreScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { RootStackParamList } from './types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import theme from '../theme';

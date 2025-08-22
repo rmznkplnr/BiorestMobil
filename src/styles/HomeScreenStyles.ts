@@ -83,6 +83,14 @@ export const styles = StyleSheet.create({
     alignSelf: 'center',
     overflow: 'hidden',
     backgroundColor: colors.cardBackground,
+    // Tıklanabilir görünüm için gelişmiş gölge
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(124, 58, 237, 0.2)',
     ...shadowStyle,
   },
   zScoreGradient: {

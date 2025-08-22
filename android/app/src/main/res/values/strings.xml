@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">BioRest Home</string>
+    <string name="foreground_service_description">Mi Band 3 sağlık verilerini sürekli toplar ve AWS\'e senkronize eder</string>
 </resources>

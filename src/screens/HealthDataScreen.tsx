@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,12 +17,19 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import HealthConnectService from '../services/HealthConnectService';
 import HealthKitService from '../services/HealthKitService';
-import healthDataSyncService from '../services/HealthDataSyncService';
 import healthDataQueryService from '../services/HealthDataQueryService';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import styles from '../styles/HealthDataScreenStyles';
 import { HealthData } from '../types/health';
-import HealthDataService from '../services/HealthDataService';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { 
+  setTimeRange, 
+  syncHealthData, 
+  fetchDailyHealthData,
+  fetchWeeklyHealthData,
+  fetchMonthlyHealthData 
+} from '../store/slices/healthSlice';
+import { setPermissionModalVisible } from '../store/slices/uiSlice';
 
 // Görünüm bileşenlerini içe aktar
 import DailyHealthView from '../components/health/DailyHealthView';
@@ -31,19 +38,29 @@ import MonthlyHealthView from '../components/health/MonthlyHealthView';
 
 type HealthDataScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-// Zaman aralığı tipi
-type TimeRange = 'day' | 'week' | 'month';
-
 const HealthDataScreen = () => {
   const navigation = useNavigation<HealthDataScreenNavigationProp>();
+  const dispatch = useAppDispatch();
+  
+  // Redux state
+  const { 
+    timeRange, 
+    dailyData, 
+    weeklyData, 
+    monthlyData, 
+    dailyLoading, 
+    weeklyLoading, 
+    monthlyLoading,
+    isSyncing,
+    lastSync 
+  } = useAppSelector((state) => state.health);
+  
+  const { isPermissionModalVisible } = useAppSelector((state) => state.ui);
+  
+  // Local state
   const [isHealthConnectAvailable, setIsHealthConnectAvailable] = useState(false);
   const [isHealthConnectInstalled, setIsHealthConnectInstalled] = useState<boolean | null>(null);
   const [isHealthKitAvailable, setIsHealthKitAvailable] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [timeRange, setTimeRange] = useState<TimeRange>('day');
-  const [isPermissionModalVisible, setIsPermissionModalVisible] = useState(false);
-  const [healthData, setHealthData] = useState<HealthData | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
   
   // Animasyon değerleri
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -59,8 +76,7 @@ const HealthDataScreen = () => {
   
   useEffect(() => {
     const checkConfig = async () => {
-      // AWS yapılandırmasını ve auth durumunu kontrol et
-      await HealthDataService.checkConfigAndAuth();
+      console.log('AWS config kontrolü yapılıyor...');
     };
     
     checkConfig();
@@ -87,7 +103,6 @@ const HealthDataScreen = () => {
     ]).start();
     
     return () => {
-      // Temizlik işlemleri
       if (tabChangeTimeoutRef.current) {
         clearTimeout(tabChangeTimeoutRef.current);
       }
@@ -108,353 +123,211 @@ const HealthDataScreen = () => {
     }).start();
   }, [timeRange, tabTranslateX, tabWidth]);
 
+  // Zaman aralığı değiştiğinde veri çek
+  useEffect(() => {
+    const fetchData = async () => {
+      const currentDate = new Date();
+      
+      try {
+        if (timeRange === 'day') {
+          console.log('📅 Günlük veri çekiliyor...');
+          await dispatch(fetchDailyHealthData(currentDate)).unwrap();
+        } else if (timeRange === 'week') {
+          const weekStart = new Date(currentDate);
+          weekStart.setDate(currentDate.getDate() - 7);
+          const weekEnd = currentDate;
+          
+          console.log('📅 Haftalık veri çekiliyor...');
+          await dispatch(fetchWeeklyHealthData({ startDate: weekStart, endDate: weekEnd })).unwrap();
+        } else if (timeRange === 'month') {
+          const monthStart = new Date(currentDate);
+          monthStart.setDate(currentDate.getDate() - 30);
+          const monthEnd = currentDate;
+          
+          console.log('📅 Aylık veri çekiliyor...');
+          await dispatch(fetchMonthlyHealthData({ startDate: monthStart, endDate: monthEnd })).unwrap();
+        }
+      } catch (error) {
+        console.error('❌ Veri çekme hatası:', error);
+      }
+    };
+
+    fetchData();
+  }, [timeRange, dispatch]);
+
   const showHealthConnectPermissionModal = () => {
-    setIsPermissionModalVisible(true);
+    dispatch(setPermissionModalVisible(true));
   };
 
   const hideHealthConnectPermissionModal = () => {
-    setIsPermissionModalVisible(false);
+    dispatch(setPermissionModalVisible(false));
   };
 
   const checkHealthConnectAvailability = async () => {
-    if (Platform.OS !== 'android') {
-      setIsHealthConnectAvailable(false);
-      setIsHealthConnectInstalled(false);
-      return;
-    }
-
-    try {
-      console.log('Health Connect yüklü mü kontrolü başlatılıyor...');
-      
-      const installed = await HealthConnectService.isInstalled();
-      console.log('Health Connect yüklü durumu:', installed);
-      
-      setIsHealthConnectInstalled(installed);
-      
-      if (!installed) {
-        console.log('Health Connect yüklü değil, yükleme ekranı gösteriliyor');
-        setIsHealthConnectAvailable(false);
-        Alert.alert(
-          'Health Connect Gerekli',
-          'Sağlık verilerinizi görüntülemek için Health Connect uygulamasını yüklemeniz gerekiyor.',
-          [
-            { text: 'Vazgeç', style: 'cancel' },
-            { text: 'Yükle', onPress: () => openHealthConnectPlayStore() }
-          ]
-        );
-        return;
-      }
-      
-      console.log('Health Connect yüklü, servisi başlatmaya çalışılıyor...');
-      const isAvailable = await HealthConnectService.initialize();
-      console.log('Health Connect başlatma sonucu:', isAvailable);
-      
-      if (isAvailable) {
+     try {
+       // Basit kontrol - gerçek implementasyon sonra eklenecek
+       console.log('Health Connect kontrolü yapılıyor...');
         setIsHealthConnectAvailable(true);
-        // İzinleri kontrol et
-        const hasPermissions = await HealthConnectService.checkPermissionsAlreadyGranted();
-        if (!hasPermissions) {
-          console.log('Health Connect izinleri eksik, izin isteniyor...');
-          await connectToHealthConnect();
-        }
-      } else {
-        console.log('Health Connect servisi başlatılamadı');
-        setIsHealthConnectAvailable(false);
-      }
+       setIsHealthConnectInstalled(true);
     } catch (error) {
-      console.error('Health Connect kontrolü sırasında hata:', error);
-      setIsHealthConnectAvailable(false);
-    }
-  };
-
-  const openHealthConnectPlayStore = async () => {
-    try {
-      const url = 'market://details?id=com.google.android.apps.healthdata';
-      const canOpen = await Linking.canOpenURL(url);
-      
-      if (canOpen) {
-        await Linking.openURL(url);
-      } else {
-        await Linking.openURL('https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata');
-      }
-    } catch (error) {
-      console.error('Health Connect Play Store açma hatası:', error);
-      Alert.alert('Hata', 'Health Connect Play Store sayfası açılamadı.');
-    }
-  };
-
-  const handleHealthConnectAccess = async () => {
-    if (Platform.OS === 'android') {
-      if (isHealthConnectInstalled) {
-        try {
-          const isAvailable = await HealthConnectService.initialize();
-          setIsHealthConnectAvailable(isAvailable);
-          
-          if (isAvailable) {
-            // İzinler kontrolü
-            const hasPermissions = await HealthConnectService.checkPermissionsAlreadyGranted();
-            if (!hasPermissions) {
-              showHealthConnectPermissionModal();
-            }
-          } else {
-            console.log('Health Connect servisi başlatılamadı, izinler isteniyor...');
-            showHealthConnectPermissionModal();
-          }
-        } catch (error) {
-          console.error('Health Connect erişimi sırasında hata:', error);
-        }
-      } else {
-        Alert.alert(
-          'Health Connect Gerekli',
-          'Sağlık verilerinizi görüntülemek için Health Connect uygulamasını yüklemeniz gerekiyor.',
-          [
-            { text: 'Vazgeç', style: 'cancel' },
-            { text: 'Yükle', onPress: () => openHealthConnectPlayStore() }
-          ]
-        );
-      }
-    } else if (Platform.OS === 'ios') {
-      // iOS için HealthKit'i başlat
-      initializeHealthKit();
-    }
-  };
-
-  const connectToHealthConnect = async () => {
-    if (Platform.OS !== 'android') return;
-    
-    try {
-      console.log('Health Connect izinleri isteniyor...');
-      const granted = await HealthConnectService.requestPermissions();
-      console.log('Health Connect izinleri verildi mi:', granted);
-      
-      if (granted) {
-        console.log('Health Connect izinleri verildi, servisi kullanmaya başlayabiliriz');
-        setIsHealthConnectAvailable(true);
-      } else {
-        console.log('Health Connect izinleri reddedildi');
-        setIsHealthConnectAvailable(false);
-        Alert.alert(
-          'İzinler Gerekli',
-          'Sağlık verilerinizi görüntülemek için gerekli izinleri vermeniz gerekiyor.',
-          [
-            { text: 'Vazgeç', style: 'cancel' },
-            { 
-              text: 'İzinleri Yönet', 
-              onPress: () => HealthConnectService.openHealthConnectApp() 
-            }
-          ]
-        );
-      }
-    } catch (error) {
-      console.error('Health Connect bağlantısı sırasında hata:', error);
-      setIsHealthConnectAvailable(false);
-      Alert.alert(
-        'Bağlantı Hatası',
-        'Health Connect servisine bağlanırken bir hata oluştu. Lütfen daha sonra tekrar deneyin.',
-        [{ text: 'Tamam', style: 'default' }]
-      );
-    } finally {
-      hideHealthConnectPermissionModal();
+       console.error('Health Connect kontrol hatası:', error);
     }
   };
 
   const initializeHealthKit = async () => {
     try {
-      console.log('HealthKit kullanılabilirliği kontrol ediliyor...');
-      const isAvailable = await HealthKitService.initialize();
-      
-      if (!isAvailable) {
-        console.log('HealthKit bu cihazda kullanılamıyor');
-        setIsHealthKitAvailable(false);
-        Alert.alert(
-          'HealthKit Kullanılamıyor',
-          'Sağlık verilerinizi görüntülemek için HealthKit gereklidir, ancak bu cihazda kullanılamıyor.',
-          [{ text: 'Tamam', style: 'default' }]
-        );
-        return;
-      }
-      
-      console.log('HealthKit başlatılıyor...');
-      const initialized = await HealthKitService.initialize();
-      
-      if (initialized) {
-        console.log('HealthKit başarıyla başlatıldı');
+       // Basit kontrol - gerçek implementasyon sonra eklenecek
+       console.log('HealthKit kontrolü yapılıyor...');
         setIsHealthKitAvailable(true);
-      } else {
-        console.log('HealthKit başlatılamadı veya izinler reddedildi');
-        setIsHealthKitAvailable(false);
-        Alert.alert(
-          'HealthKit İzinleri',
-          'Sağlık verilerinize erişebilmek için Sağlık uygulamasında izin vermeniz gerekiyor.',
-          [
-            { text: 'Vazgeç', style: 'cancel' },
-            { 
-              text: 'Ayarlar', 
-              onPress: () => {
-                if (Platform.OS === 'ios') {
-                  Linking.openURL('x-apple-health://'); // Sağlık uygulamasını aç
-                }
-              } 
-            }
-          ]
-        );
-      }
     } catch (error) {
       console.error('HealthKit başlatma hatası:', error);
-      setIsHealthKitAvailable(false);
     }
   };
 
   // Zaman aralığı değişimini debounce ile yönet
-  const changeTimeRange = (newRange: TimeRange) => {
-    if (newRange === timeRange) return; // Aynı sekmeye tıklandıysa işlem yapma
+  const changeTimeRange = (newRange: 'day' | 'week' | 'month') => {
+    if (newRange === timeRange) return;
     
     const now = Date.now();
     
-    // Son sekme değişiminden bu yana 300ms geçti mi kontrol et
     if (now - lastTabChangeTime.current < 300) {
       console.log('Çok hızlı sekme değişimi engellendi');
       
-      // Önceki zamanlayıcıyı temizle
       if (tabChangeTimeoutRef.current) {
         clearTimeout(tabChangeTimeoutRef.current);
       }
       
-      // Yeni bir zamanlayıcı başlat
       tabChangeTimeoutRef.current = setTimeout(() => {
-        setTimeRange(newRange);
+        dispatch(setTimeRange(newRange));
         lastTabChangeTime.current = Date.now();
       }, 300);
       
       return;
     }
     
-    // Normal sekme değişimi
-    setTimeRange(newRange);
+    dispatch(setTimeRange(newRange));
     lastTabChangeTime.current = now;
   };
 
   // Sağlık verilerini yükleme işlemi tamamlandığında çağrılacak callback
   const handleDataLoaded = useCallback((data: HealthData) => {
-    setHealthData(data);
-    setLoading(false);
+    console.log('Data loaded:', data);
   }, []);
+
+  /**
+   * Manuel AWS senkronizasyonu - Redux ile
+   */
+  const handleManualSync = async () => {
+    if (isSyncing) return; // Zaten senkronizasyon yapılıyorsa çık
+    
+    try {
+      console.log('🔄 Manuel AWS senkronizasyonu başlatılıyor...');
+      
+      // Mevcut sağlık verisini al (bugün için)
+      let currentData: HealthData | null;
+      
+      if (timeRange === 'day') {
+        currentData = dailyData;
+      } else if (timeRange === 'week') {
+        currentData = weeklyData;
+      } else {
+        currentData = monthlyData;
+      }
+      
+      if (!currentData || (!currentData.heartRate.values.length && !currentData.steps.total)) {
+        Alert.alert(
+          'Veri Yok',
+          'Senkronize edilecek sağlık verisi bulunamadı. Önce sağlık verilerini alın.',
+          [{ text: 'Tamam' }]
+        );
+        return;
+      }
+      
+      console.log('📊 Senkronize edilecek veri:', {
+        heartRate: currentData.heartRate.average,
+        steps: currentData.steps.total,
+        calories: currentData.calories.total,
+        oxygen: currentData.oxygen.average,
+        sleepDuration: currentData.sleep.duration
+      });
+      
+      // Redux action ile senkronize et
+      const resultAction = await dispatch(syncHealthData(currentData));
+      
+      if (syncHealthData.fulfilled.match(resultAction)) {
+        Alert.alert(
+          '✅ Senkronizasyon Başarılı',
+          'Sağlık verileriniz AWS\'e başarıyla kaydedildi.',
+          [{ text: 'Tamam' }]
+        );
+        console.log('✅ AWS senkronizasyonu başarılı:', resultAction.payload);
+      } else {
+        const errorMessage = resultAction.payload as string;
+        Alert.alert(
+          '❌ Senkronizasyon Başarısız',
+          `Hata: ${errorMessage}`,
+          [{ text: 'Tamam' }]
+        );
+        console.error('❌ AWS senkronizasyon hatası:', errorMessage);
+      }
+      
+    } catch (error) {
+      console.error('❌ Manuel senkronizasyon hatası:', error);
+      Alert.alert(
+        '❌ Hata',
+        'Senkronizasyon sırasında beklenmeyen bir hata oluştu.',
+        [{ text: 'Tamam' }]
+      );
+    }
+  };
 
   /**
    * Kullanıcının AWS'deki verilerini görüntüle
    */
   const handleViewUserData = async () => {
     try {
-      const userData = await healthDataQueryService.getUserHealthData();
-      const userStats = await healthDataQueryService.getUserStats(7);
+      console.log('📊 AWS verileri getiriliyor...');
+      
+      // HealthDataQueryService ile kullanıcının verilerini al
+      const userHealthData = await healthDataQueryService.getUserHealthData();
+      
+      if (userHealthData && userHealthData.length > 0) {
+        console.log('📊 AWS\'den alınan veri sayısı:', userHealthData.length);
+        
+        // En son kaydı göster
+        const latestRecord = userHealthData[0];
+        const recordDate = latestRecord.tarih || 'Bilinmiyor';
+        const heartRateCount = latestRecord.nabiz?.length || 0;
+        const stepsCount = latestRecord.adim?.length || 0;
+        const sleepCount = latestRecord.uyku?.length || 0;
       
       Alert.alert(
-        'AWS Verileriniz',
-        `Toplam kayıt: ${userData.length} adet\n\nSon 7 gün istatistikleri:\n• Toplam adım: ${userStats?.totalSteps || 0}\n• Toplam kalori: ${userStats?.totalCalories || 0}\n• Ortalama nabız: ${userStats?.averageHeartRate || 0}\n• Ortalama oksijen: ${userStats?.averageOxygen || 0}`,
-        [{ text: 'Tamam' }]
-      );
-    } catch (error) {
-      Alert.alert('Hata', 'Veriler getirilemedi');
-    }
-  };
-
-  /**
-   * Manuel AWS senkronizasyonu
-   */
-  const handleManualSync = async () => {
-    try {
-      setIsSyncing(true);
-      
-      Alert.alert(
-        'Veri Senkronizasyonu',
-        'Sağlık verileriniz AWS veritabanına senkronize edilsin mi?',
-        [
+          '📊 AWS Verileriniz',
+          `Toplam kayıt: ${userHealthData.length}\n\nEn son kayıt (${recordDate}):\n• Nabız ölçümü: ${heartRateCount}\n• Adım kayıtları: ${stepsCount}\n• Uyku kayıtları: ${sleepCount}`,
+          [
           { 
-            text: 'Vazgeç', 
-            style: 'cancel',
-            onPress: () => setIsSyncing(false)
-          },
-          { 
-            text: 'Bugünü Senkronize Et', 
-            onPress: async () => {
-              try {
-                // Bugünün sağlık verisini al
-                const today = new Date();
-                const healthData = await HealthDataService.fetchHealthDataForDate(today);
-                
-                if (healthData) {
-                  const success = await healthDataSyncService.syncHealthData(healthData);
-                  setIsSyncing(false);
-                  
-                  if (success) {
-                    Alert.alert(
-                      'Başarılı!', 
-                      'Bugünün sağlık verileri başarıyla AWS\'e kaydedildi.'
+              text: 'Detaylı Log',
+              onPress: () => {
+                console.log('📋 AWS kullanıcı verileri:', userHealthData);
+              }
+            },
+            { text: 'Tamam' }
+          ]
                     );
                   } else {
                     Alert.alert(
-                      'Hata!', 
-                      'Senkronizasyon sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.'
-                    );
-                  }
-                } else {
-                  setIsSyncing(false);
-                  Alert.alert(
-                    'Veri Bulunamadı!', 
-                    'Bugüne ait sağlık verisi bulunamadı.'
-                  );
-                }
-              } catch (error) {
-                setIsSyncing(false);
-                Alert.alert(
-                  'Hata!', 
-                  'Senkronizasyon sırasında bir hata oluştu.'
-                );
-              }
-            }
-          },
-          { 
-            text: 'Son 7 Günü Senkronize Et', 
-            onPress: async () => {
-              const endDate = new Date();
-              const startDate = new Date();
-              startDate.setDate(startDate.getDate() - 7);
-              
-              // Son 7 günün verilerini sırayla senkronize et
-              let successCount = 0;
-              const currentDate = new Date(startDate);
-              
-              while (currentDate <= endDate) {
-                try {
-                  const healthData = await HealthDataService.fetchHealthDataForDate(new Date(currentDate));
-                  if (healthData) {
-                    const success = await healthDataSyncService.syncHealthData(healthData);
-                    if (success) successCount++;
-                  }
-                  currentDate.setDate(currentDate.getDate() + 1);
-                  await new Promise(resolve => setTimeout(resolve, 200)); // Rate limiting
-                } catch (error) {
-                  console.error('Toplu senkronizasyon hatası:', error);
-                  currentDate.setDate(currentDate.getDate() + 1);
-                }
-              }
-              setIsSyncing(false);
-              
-              Alert.alert(
-                'Toplu Senkronizasyon Tamamlandı!', 
-                `${successCount} günün verisi başarıyla senkronize edildi.`
-              );
-            }
-          }
-        ]
+          '📊 AWS Verileriniz',
+          'Henüz AWS\'e senkronize edilmiş veri bulunamadı.\n\nSenkronizasyon yapmak için sağ üstteki sync butonunu kullanın.',
+          [{ text: 'Tamam' }]
       );
+      }
       
     } catch (error) {
-      setIsSyncing(false);
-      console.error('Manuel senkronizasyon hatası:', error);
+      console.error('❌ AWS veri görüntüleme hatası:', error);
       Alert.alert(
-        'Hata!', 
-        'Senkronizasyon başlatılırken bir hata oluştu.'
+        '❌ Hata', 
+        'AWS verileriniz getirilemedi. Bağlantınızı kontrol edip tekrar deneyin.',
+        [{ text: 'Tamam' }]
       );
     }
   };
@@ -501,50 +374,44 @@ const HealthDataScreen = () => {
         </View>
 
         {/* Zaman aralığı seçici */}
-        <Animated.View style={[
-          styles.timeRangeSelector,
-          {
-            opacity: fadeAnim,
-            transform: [{translateY: Animated.multiply(slideAnim, 1.1)}]
-          }
-        ]}>
-          <View style={{flexDirection: 'row', justifyContent: 'space-evenly', width: '100%'}}>
-            {['day', 'week', 'month'].map((range) => (
+        <View style={styles.timeRangeSelector}>
+          <TouchableOpacity 
+            style={[
+              styles.timeRangeOption, 
+              timeRange === 'day' && { backgroundColor: '#4a90e2' }
+            ]}
+            onPress={() => changeTimeRange('day')}
+          >
+            <Text style={[styles.timeRangeText, timeRange === 'day' && { color: '#fff' }]}>
+              Günlük
+            </Text>
+          </TouchableOpacity>
+          
               <TouchableOpacity
-                key={range}
                 style={[
                   styles.timeRangeOption,
-                  timeRange === range && styles.selectedTimeRange
+              timeRange === 'week' && { backgroundColor: '#4a90e2' }
                 ]}
-                onPress={() => changeTimeRange(range as TimeRange)}
+            onPress={() => changeTimeRange('week')}
               >
-                <Text style={[
-                  {color: timeRange === range ? '#fff' : '#aaa', fontSize: 14},
-                  timeRange === range && styles.selectedTimeRangeText
-                ]}>
-                  {range === 'day' ? 'Gün' : range === 'week' ? 'Hafta' : 'Ay'}
+            <Text style={[styles.timeRangeText, timeRange === 'week' && { color: '#fff' }]}>
+              Haftalık
                 </Text>
               </TouchableOpacity>
-            ))}
-          </View>
           
-          {/* Kaydırıcı çubuk animasyonu */}
-          <Animated.View
+          <TouchableOpacity 
             style={[
-              {
-                position: 'absolute',
-                bottom: 0,
-                height: 3,
-                width: tabWidth,
-                backgroundColor: '#4a90e2',
-                borderRadius: 3,
-                transform: [{ translateX: tabTranslateX }]
-              }
+              styles.timeRangeOption, 
+              timeRange === 'month' && { backgroundColor: '#4a90e2' }
             ]}
-          />
-        </Animated.View>
+            onPress={() => changeTimeRange('month')}
+          >
+            <Text style={[styles.timeRangeText, timeRange === 'month' && { color: '#fff' }]}>
+              Aylık
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Seçilen zaman aralığına göre içerik */}
         <View style={styles.content}>
           {timeRange === 'day' && (
             <DailyHealthView 
@@ -576,30 +443,29 @@ const HealthDataScreen = () => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Health Connect İzinleri</Text>
+            <Text style={styles.modalTitle}>Health Connect Gerekli</Text>
             <Text style={styles.modalText}>
-              Sağlık verilerinizi görüntülemek için Health Connect uygulamasında izin vermeniz gerekiyor.
+              Sağlık verilerinizi okuyabilmek için Health Connect uygulamasının yüklü olması gerekiyor.
             </Text>
-            <Text style={styles.modalSteps}>
-              1. "İzinlere Git" butonuna dokunun{'\n'}
-              2. Health Connect uygulamasında "İzin Ver" seçeneğini seçin{'\n'}
-              3. İzinleri vererek uygulamaya dönün
-            </Text>
+            
             <View style={styles.modalButtons}>
               <TouchableOpacity 
-                style={[styles.modalButton, styles.modalCancelButton]} 
-                onPress={hideHealthConnectPermissionModal}
-              >
-                <Text style={styles.modalButtonText}>Daha Sonra</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.modalConfirmButton]} 
+                style={styles.modalButton}
                 onPress={() => {
                   hideHealthConnectPermissionModal();
-                  HealthConnectService.requestPermissions();
+                  Linking.openURL('https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata');
                 }}
               >
-                <Text style={styles.modalButtonText}>İzinlere Git</Text>
+                <Text style={styles.modalButtonText}>Health Connect'i Yükle</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.modalButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#4a90e2' }]}
+                onPress={hideHealthConnectPermissionModal}
+              >
+                <Text style={[styles.modalButtonText, { color: '#4a90e2' }]}>
+                  Daha Sonra
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

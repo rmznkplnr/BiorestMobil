@@ -180,7 +180,11 @@ class HealthConnectService {
     }
   }
 
-  static async getHeartRateData(startDateStr: string, endDateStr: string): Promise<{
+  /**
+   * MANUEL NABIZ ÖLÇÜMLERİ AL (Kalp Atış Hızı Kartı için)
+   * Sadece manuel ölçümleri döndürür, uyku sırasındaki otomatik ölçümler hariç
+   */
+  static async getHeartRateData(startDateStr: string, endDateStr: string, excludeSleep: boolean = true): Promise<{
     values: number[];
     times: string[];
     average: number;
@@ -193,6 +197,8 @@ class HealthConnectService {
     }
     
     try {
+      console.log('💓 Manuel nabız ölçümleri alınıyor (uyku hariç)...');
+      
       const heartRateResponse = await this.readHealthConnectRecords('HeartRate', startDateStr, endDateStr);
       if (!heartRateResponse) {
         return this.getEmptyData('heartRate');
@@ -200,26 +206,58 @@ class HealthConnectService {
 
       const heartRateRecords = this.parseHealthConnectResponse<HealthRecord>(heartRateResponse);
       
-      const values: number[] = [];
-      const times: string[] = [];
+      const allValues: number[] = [];
+      const allTimes: string[] = [];
       
+      // Tüm nabız verilerini topla
       heartRateRecords.forEach((record) => {
         if (record.samples && Array.isArray(record.samples)) {
           record.samples.forEach((sample) => {
             if (sample.beatsPerMinute && sample.time) {
-              values.push(sample.beatsPerMinute);
-              times.push(sample.time);
+              allValues.push(sample.beatsPerMinute);
+              allTimes.push(sample.time);
             }
           });
         }
       });
+
+      console.log(`💓 Toplam nabız ölçümü: ${allValues.length}`);
+
+      // Eğer uyku verilerini hariç tutmak isteniyorsa, uyku saatleri dışındaki verileri al
+      if (excludeSleep) {
+        // Gece saatleri (22:00 - 08:00) arasındaki verileri hariç tut
+        const manualValues: number[] = [];
+        const manualTimes: string[] = [];
+
+        for (let i = 0; i < allValues.length; i++) {
+          const measurementTime = new Date(allTimes[i]);
+          const hour = measurementTime.getHours();
+          
+          // Sadece gündüz saatleri (08:00-22:00) arasındaki ölçümleri al
+          if (hour >= 8 && hour < 22) {
+            manualValues.push(allValues[i]);
+            manualTimes.push(allTimes[i]);
+          }
+        }
+
+        console.log(`💓 Manuel nabız ölçümü (gündüz): ${manualValues.length} (toplam: ${allValues.length})`);
       
       return {
-        values,
-        times,
-        average: values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0,
-        max: values.length > 0 ? Math.max(...values) : 0,
-        min: values.length > 0 ? Math.min(...values) : 0
+          values: manualValues,
+          times: manualTimes,
+          average: manualValues.length > 0 ? manualValues.reduce((a, b) => a + b, 0) / manualValues.length : 0,
+          max: manualValues.length > 0 ? Math.max(...manualValues) : 0,
+          min: manualValues.length > 0 ? Math.min(...manualValues) : 0
+        };
+      }
+
+      // Uyku hariç tutulmazsa tüm verileri döndür
+      return {
+        values: allValues,
+        times: allTimes,
+        average: allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0,
+        max: allValues.length > 0 ? Math.max(...allValues) : 0,
+        min: allValues.length > 0 ? Math.min(...allValues) : 0
       };
     } catch (error) {
       console.error('Nabız verisi alınırken hata:', error);
@@ -274,8 +312,9 @@ class HealthConnectService {
   }
 
   /**
-   * UYKU SIRASINDA NABIZ VERİSİ AL (Mi Fitness'tan)
+   * UYKU SIRASINDA NABIZ VERİSİ AL (Mi Fitness'tan) - GELİŞTİRİLMİŞ VERSİYON
    * Bu fonksiyon uyku zamanı aralığında olan nabız verilerini filtreler
+   * Mi Fitness'tan daha fazla veri almak için çeşitli yöntemler dener
    */
   static async getSleepHeartRateData(startDateStr: string, endDateStr: string, sleepStartTime?: string, sleepEndTime?: string): Promise<{
     values: number[];
@@ -292,72 +331,159 @@ class HealthConnectService {
     
     try {
       console.log('🛌 Uyku sırasındaki nabız verileri alınıyor...');
+      console.log(`🛌 Uyku zamanı aralığı: ${sleepStartTime} - ${sleepEndTime}`);
       
-      // Normal nabız verilerini al
-      const heartRateResponse = await this.readHealthConnectRecords('HeartRate', startDateStr, endDateStr);
-      if (!heartRateResponse) {
-        console.log('🛌 Nabız verisi bulunamadı');
-        return this.getEmptyData('heartRate');
+      // YÖNTEM 1: Uyku odaklı, sınırlı veri kaynağı arama
+      let searchStart = startDateStr;
+      let searchEnd = endDateStr;
+      
+      // Eğer uyku zamanları belirtilmişse, sadece o aralığı + buffer kullan
+      if (sleepStartTime && sleepEndTime) {
+        const sleepStart = new Date(sleepStartTime);
+        const sleepEnd = new Date(sleepEndTime);
+        // 2 saat buffer (uyku öncesi/sonrası)
+        const bufferStart = new Date(sleepStart.getTime() - 2 * 60 * 60 * 1000);
+        const bufferEnd = new Date(sleepEnd.getTime() + 2 * 60 * 60 * 1000);
+        searchStart = bufferStart.toISOString();
+        searchEnd = bufferEnd.toISOString();
+        console.log(`🎯 Uyku odaklı arama: ${searchStart} - ${searchEnd}`);
+      } else {
+        // Uyku zamanı belirtilmemişse ana tarih aralığını kullan
+        console.log(`📅 Genel tarih aralığı: ${searchStart} - ${searchEnd}`);
       }
-
-      const heartRateRecords = this.parseHealthConnectResponse<HealthRecord>(heartRateResponse);
       
+      // Sadece en önemli nabız veri tiplerini kullan
+      const heartRateTypes = [
+        'HeartRate',              // Standart nabız (EN ÖNEMLİ)
+        'RestingHeartRate',       // Dinlenme nabzı 
+        'SleepSession'            // Uyku oturumu nabzı
+      ];
+      
+      const allHeartRateData: { values: number[], times: string[], source: string }[] = [];
+      
+      // Sadece belirlenen tarih aralığında veri tiplerini dene
+      for (const type of heartRateTypes) {
+        try {
+          console.log(`📊 ${type} veri tipi deneniyor...`);
+          const response = await this.readHealthConnectRecords(type, searchStart, searchEnd);
+          
+          if (response) {
+            const records = this.parseHealthConnectResponse<HealthRecord>(response);
+            console.log(`✅ ${type} verisi bulundu: ${records.length} kayıt`);
+            
+            const extractedData = this.extractHeartRateFromAnyRecord(records, type);
+            if (extractedData.values.length > 0) {
+              allHeartRateData.push({
+                values: extractedData.values,
+                times: extractedData.times,
+                source: type
+              });
+              console.log(`🎯 ${type}'dan ${extractedData.values.length} nabız değeri çıkarıldı`);
+            }
+          }
+        } catch (error) {
+          console.log(`❌ ${type} veri tipi hatası:`, error);
+        }
+      }
+      
+      // Tüm nabız verilerini birleştir
       const allValues: number[] = [];
       const allTimes: string[] = [];
-      const sleepValues: number[] = [];
-      const sleepTimes: string[] = [];
+      const sourceSummary: string[] = [];
       
-      // Tüm nabız verilerini topla
-      heartRateRecords.forEach((record) => {
-        if (record.samples && Array.isArray(record.samples)) {
-          record.samples.forEach((sample) => {
-            if (sample.beatsPerMinute && sample.time) {
-              allValues.push(sample.beatsPerMinute);
-              allTimes.push(sample.time);
-              
-              // Eğer uyku zamanı aralığı verilmişse filtrele
+      allHeartRateData.forEach(data => {
+        allValues.push(...data.values);
+        allTimes.push(...data.times);
+        sourceSummary.push(`${data.source}: ${data.values.length} ölçüm`);
+      });
+      
+      console.log(`📈 Toplam nabız verisi özeti:
+      • Toplam kaynak sayısı: ${allHeartRateData.length}
+      • Toplam ölçüm sayısı: ${allValues.length}
+      • Kaynaklar: ${sourceSummary.join(', ')}`);
+      
+      if (allValues.length === 0) {
+        console.log('❌ Hiçbir kaynaktan nabız verisi bulunamadı');
+        return this.getEmptyData('heartRate');
+      }
+      
+      // Uyku zamanı filtreleme - Sadece uyku saatleri arasındaki veriler
+      let sleepValues: number[] = [];
+      let sleepTimes: string[] = [];
+      
               if (sleepStartTime && sleepEndTime) {
-                const sampleTime = new Date(sample.time);
                 const sleepStart = new Date(sleepStartTime);
                 const sleepEnd = new Date(sleepEndTime);
                 
-                // Uyku zamanı aralığında mı kontrol et
+        console.log(`🔍 Uyku zaman filtreleme: ${sleepStart.toISOString()} - ${sleepEnd.toISOString()}`);
+        console.log(`🕐 Uyku süresi: ${Math.round((sleepEnd.getTime() - sleepStart.getTime()) / (1000 * 60))} dakika`);
+        
+        allValues.forEach((value, index) => {
+          const sampleTime = new Date(allTimes[index]);
+          // Tam uyku zamanı aralığında olan veriler
                 if (sampleTime >= sleepStart && sampleTime <= sleepEnd) {
-                  sleepValues.push(sample.beatsPerMinute);
-                  sleepTimes.push(sample.time);
-                }
-              }
-            }
-          });
+            sleepValues.push(value);
+            sleepTimes.push(allTimes[index]);
         }
       });
+        
+        console.log(`🛌 Uyku zamanı filtreleme sonrası: ${sleepValues.length} ölçüm (toplam veriden: ${allValues.length})`);
+      }
       
-      // Uyku nabız verilerini kullan (varsa), yoksa tüm verileri kullan
-      const targetValues = sleepValues.length > 0 ? sleepValues : allValues;
-      const targetTimes = sleepTimes.length > 0 ? sleepTimes : allTimes;
+      // Uyku verisi varsa onu kullan, yoksa tüm verileri kullan
+      let targetValues = sleepValues.length > 0 ? sleepValues : allValues;
+      let targetTimes = sleepTimes.length > 0 ? sleepTimes : allTimes;
+      
+      // Aykırı değer temizleme
+      if (targetValues.length > 0) {
+        const filteredResult = this.filterHeartRateOutliers(targetValues, targetTimes);
+        targetValues = filteredResult.values;
+        targetTimes = filteredResult.times;
+            }
+      
+      // Örnekleme yapmıyoruz - Health Connect'teki tüm ölçümler gelsin
+      console.log(`📊 Toplam ölçüm sayısı: ${targetValues.length} (örnekleme yapılmadı)`);
+      
       
       const sleepHeartRateAverage = targetValues.length > 0 ? 
         Math.round(targetValues.reduce((a, b) => a + b, 0) / targetValues.length) : 0;
       
-      console.log(`🛌 Uyku nabız analizi:
-      • Toplam nabız ölçümü: ${allValues.length}
-      • Uyku sırasında nabız ölçümü: ${targetValues.length}
-      • Uyku ortalama nabız: ${sleepHeartRateAverage} BPM
-      • Uyku nabız aralığı: ${targetValues.length > 0 ? Math.min(...targetValues) + ' - ' + Math.max(...targetValues) : 'N/A'} BPM`);
+      // Beklenen ölçüm sayısını hesapla
+      const sleepDurationMinutes = sleepStartTime && sleepEndTime ? 
+        (new Date(sleepEndTime).getTime() - new Date(sleepStartTime).getTime()) / (1000 * 60) : 0;
+      const expectedMeasurements = sleepDurationMinutes > 0 ? Math.floor(sleepDurationMinutes / 3) : 0;
+      const coveragePercentage = expectedMeasurements > 0 ? (targetValues.length / expectedMeasurements * 100).toFixed(1) : '0';
+      
+      console.log(`🛌 FINAL Uyku nabız analizi:
+      • Toplam kaynaktan nabız: ${allValues.length}
+      • Uyku sırasında nabız: ${targetValues.length}
+      • Uyku süresi: ${Math.round(sleepDurationMinutes)} dakika
+      • Beklenen ölçüm: ~${expectedMeasurements} (3 dk aralık)
+      • Kapsama oranı: ${coveragePercentage}%
+      • Ortalama nabız: ${sleepHeartRateAverage} BPM
+      • Nabız aralığı: ${targetValues.length > 0 ? Math.min(...targetValues) + ' - ' + Math.max(...targetValues) : 'N/A'} BPM`);
+      
+      if (targetValues.length < expectedMeasurements * 0.1) {
+        console.log(`⚠️ Uyku nabız ölçüm sayısı çok düşük (${targetValues.length}/${expectedMeasurements})`);
+        console.log(`💡 Mi Fitness'ta 'Sürekli nabız ölçümü' ve 'Uyku nabız ölçümü' aktif mi kontrol edin`);
+      }
       
       return {
         values: targetValues,
         times: targetTimes,
-        average: allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0,
-        max: allValues.length > 0 ? Math.max(...allValues) : 0,
-        min: allValues.length > 0 ? Math.min(...allValues) : 0,
+        average: targetValues.length > 0 ? targetValues.reduce((a, b) => a + b, 0) / targetValues.length : 0,
+        max: targetValues.length > 0 ? Math.max(...targetValues) : 0,
+        min: targetValues.length > 0 ? Math.min(...targetValues) : 0,
         sleepHeartRateAverage
       };
+      
     } catch (error) {
       console.error('🛌 Uyku nabız verisi alınırken hata:', error);
       return this.getEmptyData('heartRate');
     }
   }
+
+
 
   static async getStepsData(startDateStr: string, endDateStr: string): Promise<number> {
     if (Platform.OS !== 'android') {
@@ -571,6 +697,7 @@ class HealthConnectService {
       console.log("- Nabız:", heartRateData?.average || 0);
       console.log("- Oksijen:", oxygenData?.average || 0);
       console.log("- Uyku:", sleepData?.totalMinutes || 0);
+      console.log("- Uyku Nabız:", sleepData?.sleepHeartRate ? `${sleepData.sleepHeartRate.values.length} ölçüm, ort. ${Math.round(sleepData.sleepHeartRate.average)} BPM` : 'yok');
 
       const now = new Date().toISOString();
       
@@ -606,7 +733,8 @@ class HealthConnectService {
           values: [0],
           times: [now],
           lastUpdated: now,
-          status: 'good' as const
+          status: 'good' as const,
+          sleepHeartRate: undefined
         },
         calories: { 
           total: caloriesData || 0,
@@ -672,7 +800,8 @@ class HealthConnectService {
         values: [0],
         times: [now],
         lastUpdated: now,
-        status: 'good' as const
+        status: 'good' as const,
+        sleepHeartRate: undefined
       },
       calories: {
         total: 0,
@@ -1014,8 +1143,15 @@ class HealthConnectService {
       let earliestStart = '';
       let latestEnd = '';
   
-      filteredSleepRecords.forEach(session => {
-        console.log('İşlenen uyku oturumu:', session);
+      console.log(`🔍 Uyku zamanlarını belirleme - ${filteredSleepRecords.length} oturum işlenecek`);
+  
+      filteredSleepRecords.forEach((session, index) => {
+        console.log(`📋 Uyku oturumu ${index + 1}:`, {
+          startTime: session.startTime,
+          endTime: session.endTime,
+          hasStartTime: !!session.startTime,
+          hasEndTime: !!session.endTime
+        });
         
         const startTime = session.startTime;
         const endTime = session.endTime;
@@ -1128,9 +1264,61 @@ class HealthConnectService {
       }
   
       console.log(`Uyku metrikleri: Toplam=${totalSleepMinutes}, Derin=${totalDeepMinutes}, Hafif=${totalLightMinutes}, REM=${totalRemMinutes}, Uyanık=${totalAwakeMinutes}`);
+      console.log(`🕐 Final uyku zamanları: earliestStart=${earliestStart}, latestEnd=${latestEnd}`);
       
       // Zaman noktası oluştur
       const now = new Date().toISOString();
+
+      // Uyku zamanlarını belirle - önce actual data, sonra tahmin
+      let sleepStart = earliestStart;
+      let sleepEnd = latestEnd;
+
+      // Uyku sırasındaki nabız verilerini al
+      let sleepHeartRateData = null;
+      
+      if (!sleepStart || !sleepEnd) {
+        console.log('⚠️ Uyku zamanları eksik, tahmini gece saatleri kullanılacak');
+        
+        // Sorgu tarihinden tahmini gece saatleri oluştur
+        const queryDate = new Date(startDateStr);
+        const estimatedSleepStart = new Date(queryDate);
+        estimatedSleepStart.setHours(22, 0, 0, 0); // Akşam 22:00
+        
+        const estimatedSleepEnd = new Date(queryDate);
+        estimatedSleepEnd.setDate(estimatedSleepEnd.getDate() + 1);
+        estimatedSleepEnd.setHours(7, 0, 0, 0); // Sabah 07:00
+        
+        sleepStart = estimatedSleepStart.toISOString();
+        sleepEnd = estimatedSleepEnd.toISOString();
+        
+        console.log(`🔮 Tahmini uyku zamanları: ${sleepStart} - ${sleepEnd}`);
+      }
+      
+      console.log('🛌 Uyku sırasındaki nabız verileri alınıyor...');
+      try {
+        // Uyku için daha geniş tarih aralığı kullan (önceki gün ve sonraki gün dahil)
+        const sleepStartDate = new Date(sleepStart);
+        const sleepEndDate = new Date(sleepEnd);
+        
+        // 1 gün öncesinden 1 gün sonrasına kadar genişlet
+        const extendedStartDate = new Date(sleepStartDate.getTime() - 24 * 60 * 60 * 1000);
+        const extendedEndDate = new Date(sleepEndDate.getTime() + 24 * 60 * 60 * 1000);
+        
+        sleepHeartRateData = await this.getSleepHeartRateData(
+          extendedStartDate.toISOString(), 
+          extendedEndDate.toISOString(), 
+          sleepStart, 
+          sleepEnd
+        );
+          
+          if (sleepHeartRateData && sleepHeartRateData.values.length > 0) {
+            console.log(`✅ Uyku nabız verisi eklendi: ${sleepHeartRateData.values.length} ölçüm, ortalama ${Math.round(sleepHeartRateData.average)} BPM`);
+          } else {
+            console.log('⚠️ Uyku sırasında nabız verisi bulunamadı');
+          }
+        } catch (error) {
+          console.error('❌ Uyku nabız verisi alınırken hata:', error);
+        }
   
       // Verileri döndür
       const sleepMetric: SleepMetric = {
@@ -1144,14 +1332,22 @@ class HealthConnectService {
         light: totalLightMinutes,
         rem: totalRemMinutes,
         awake: totalAwakeMinutes,
-        startTime: earliestStart,
-        endTime: latestEnd,
+        startTime: sleepStart || earliestStart,
+        endTime: sleepEnd || latestEnd,
         totalMinutes: totalSleepMinutes,
         stages: stages.map(s => ({
           stage: s.stage as 'deep' | 'light' | 'rem' | 'awake',
           startTime: s.startTime,
           endTime: s.endTime
-        }))
+        })),
+        // Uyku sırasındaki nabız verilerini ekle
+        sleepHeartRate: sleepHeartRateData && sleepHeartRateData.values.length > 0 ? {
+          values: sleepHeartRateData.values,
+          times: sleepHeartRateData.times,
+          average: sleepHeartRateData.average,
+          max: sleepHeartRateData.max,
+          min: sleepHeartRateData.min
+        } : undefined
       };
       
       return sleepMetric;
@@ -1181,6 +1377,89 @@ class HealthConnectService {
     
     console.warn('Bilinmeyen uyku aşaması:', stageValue);
     return 'light'; // Bilinmeyeni hafif uykuya varsayılan olarak eşle
+  }
+
+  /**
+   * Herhangi bir kayıt tipinden nabız verisi çıkarmaya çalış
+   */
+  private static extractHeartRateFromAnyRecord(records: HealthRecord[], recordType: string): { values: number[], times: string[] } {
+    const values: number[] = [];
+    const times: string[] = [];
+    
+    records.forEach(record => {
+      // Standart samples yapısı
+      if (record.samples && Array.isArray(record.samples)) {
+        record.samples.forEach(sample => {
+          if (sample.beatsPerMinute && sample.time) {
+            values.push(sample.beatsPerMinute);
+            times.push(sample.time);
+          }
+        });
+      }
+      
+      // Doğrudan record üzerinde nabız alanları
+      const recordAny = record as any;
+      
+      // Farklı alan isimlerini dene
+      const heartRateFields = ['heartRate', 'beatsPerMinute', 'avgHeartRate', 'averageHeartRate', 'bpm'];
+      const timeFields = ['time', 'timestamp', 'startTime', 'recordTime'];
+      
+      for (const hrField of heartRateFields) {
+        for (const timeField of timeFields) {
+          if (recordAny[hrField] && recordAny[timeField]) {
+            const heartRateValue = Number(recordAny[hrField]);
+            if (heartRateValue > 0 && heartRateValue < 300) { // Mantıklı nabız aralığı
+              values.push(heartRateValue);
+              times.push(recordAny[timeField]);
+            }
+          }
+        }
+      }
+      
+      // Nested object araması (Mi Fitness özel yapıları için)
+      if (recordAny.heartRateData || recordAny.biometricData || recordAny.vitalSigns) {
+        const nestedData = recordAny.heartRateData || recordAny.biometricData || recordAny.vitalSigns;
+        if (nestedData.samples || nestedData.values) {
+          const nestedSamples = nestedData.samples || nestedData.values;
+          if (Array.isArray(nestedSamples)) {
+            nestedSamples.forEach((sample: any) => {
+              if (sample.heartRate || sample.bpm || sample.beatsPerMinute) {
+                const hr = sample.heartRate || sample.bpm || sample.beatsPerMinute;
+                const time = sample.time || sample.timestamp || record.startTime;
+                if (hr > 0 && hr < 300 && time) {
+                  values.push(Number(hr));
+                  times.push(time);
+                }
+              }
+            });
+          }
+        }
+      }
+    });
+    
+    return { values, times };
+  }
+  
+  /**
+   * Nabız aykırı değer temizleme
+   */
+  private static filterHeartRateOutliers(values: number[], times: string[]): { values: number[], times: string[] } {
+    const filteredValues: number[] = [];
+    const filteredTimes: string[] = [];
+    
+    values.forEach((value, index) => {
+      // Uyku nabzı için makul aralık: 30-120 BPM (daha geniş aralık)
+      if (value >= 30 && value <= 120) {
+        filteredValues.push(value);
+        if (times[index]) {
+          filteredTimes.push(times[index]);
+        }
+      }
+    });
+    
+    console.log(`🧹 Nabız filtreleme: ${values.length} → ${filteredValues.length} (${values.length - filteredValues.length} aykırı değer temizlendi)`);
+    
+    return { values: filteredValues, times: filteredTimes };
   }
 
   static async isInstalled(): Promise<boolean> {

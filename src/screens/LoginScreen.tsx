@@ -16,111 +16,66 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { 
-  signIn, 
-  getCurrentUser, 
-  fetchAuthSession,
-  resetPassword,
-  confirmResetPassword 
-} from 'aws-amplify/auth';
 import { LinearGradient } from 'react-native-linear-gradient';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { loginUser, checkAuthStatus, clearError } from '../store/slices/authSlice';
 
 // Logo importu
 const LogoImage = require('../assets/logo.png');
 
-type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Auth'>;
 
 const LoginScreen = () => {
   const navigation = useNavigation<LoginScreenNavigationProp>();
+  const dispatch = useAppDispatch();
+  const { user, isAuthenticated, loading, error, initializing } = useAppSelector((state) => state.auth);
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [initializing, setInitializing] = useState(true);
   const [username, setUsername] = useState('');
 
   useEffect(() => {
     // Auth durumunu kontrol et
-    const checkAuthStatus = async () => {
-      try {
-        setError(null);
-        setInitializing(true);
-        
-        // Zaten giriş yapmış bir kullanıcı var mı?
-        const user = await getCurrentUser();
-        console.log('Kullanıcı zaten giriş yapmış:', user.username);
-        
-        // Ana ekrana yönlendir
-        navigation.replace('Main');
-      } catch (error) {
-        // Giriş yapmamış
-        console.log('Kullanıcı giriş yapmamış');
-      } finally {
-        setInitializing(false);
-      }
-    };
+    dispatch(checkAuthStatus());
+  }, [dispatch]);
 
-    checkAuthStatus();
-  }, [navigation]);
+  useEffect(() => {
+    // Eğer authenticated ise ana ekrana yönlendir
+    if (isAuthenticated && !initializing) {
+        navigation.replace('Main');
+      }
+  }, [isAuthenticated, initializing, navigation]);
 
   const handleLogin = async () => {
     if (!email || !password) {
-      setError('Lütfen tüm alanları doldurun');
+      Alert.alert('Hata', 'Lütfen tüm alanları doldurun');
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    dispatch(clearError());
     
     try {
-      console.log('Giriş yapılıyor:', { email });
+      const result = await dispatch(loginUser({ email, password }));
       
-      // SRP Auth ile giriş - Gen 2 formatı
-      const { isSignedIn, nextStep } = await signIn({
-        username: email,
-        password
-      });
-      
-      console.log('Giriş başarılı:', isSignedIn);
-      
-      if (isSignedIn) {
-        // Ana ekrana git
-        navigation.replace('Main');
-      }
-    } catch (error: any) {
-      console.log('Giriş hatası:', error?.message || 'Bilinmeyen hata');
-      console.log('Hata detayları:', error?.code, error?.name);
-      // Detaylı hata bilgilerini gösterelim
-      console.error('Tam hata:', JSON.stringify(error, null, 2));
-      
-      let errorMessage = 'Giriş yapılırken bir hata oluştu';
-      
-      if (error) {
-        if (error.name === 'UserNotConfirmedException') {
-          errorMessage = 'Hesabınızı doğrulamanız gerekiyor';
+      if (loginUser.fulfilled.match(result)) {
+        // Başarılı giriş - useEffect zaten yönlendirme yapacak
+        console.log('Giriş başarılı');
+      } else if (loginUser.rejected.match(result)) {
+        // Hata handling
+        const errorMessage = result.payload as string;
+        if (errorMessage.includes('UserNotConfirmedException')) {
           navigation.navigate('ConfirmAccount', { email });
-          return;
-        } else if (error.name === 'NotAuthorizedException') {
-          errorMessage = 'Geçersiz e-posta veya şifre';
-        } else if (error.name === 'UserNotFoundException') {
-          errorMessage = 'Bu e-posta adresi ile kayıtlı hesap bulunamadı';
-        } else if (error.name === 'NetworkError' || error.name === 'Network error') {
-          errorMessage = 'İnternet bağlantınızı kontrol edin (AWS sunucularına erişilemiyor)';
-        } else {
-          errorMessage = error.message || 'Bağlantı hatası, lütfen daha sonra tekrar deneyin';
         }
       }
-      
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
+    } catch (error: any) {
+      console.error('Login error:', error);
     }
   };
 
   // User Pool'da kullanıcıyı CONFIRM durumuna getir
-  const confirmUserInPool = async () => {
+  const confirmUserInPool = () => {
     if (!email) {
-      setError('Lütfen e-posta adresinizi girin');
+      Alert.alert('Hata', 'Lütfen e-posta adresinizi girin');
       return;
     }
     
@@ -128,395 +83,237 @@ const LoginScreen = () => {
   };
 
   // Şifreyi sıfırla
-  const handleResetPassword = async () => {
+  const handleResetPassword = () => {
     if (!email) {
-      setError('Lütfen e-posta adresinizi girin');
+      Alert.alert('Hata', 'Lütfen e-posta adresinizi girin');
       return;
     }
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-      await resetPassword({
-        username: email
-      });
       
       Alert.alert(
         'Şifre Sıfırlama',
-        'Şifre sıfırlama talimatları e-posta adresinize gönderildi.'
-      );
-    } catch (error: any) {
-      console.log('Şifre sıfırlama hatası:', error);
-      setError('Şifre sıfırlanamadı: ' + (error.message || 'Bilinmeyen hata'));
-    } finally {
-      setLoading(false);
-    }
+      'Şifre sıfırlama özelliği henüz aktif değil. Lütfen daha sonra tekrar deneyin.'
+    );
   };
-
-  // Manuel giriş işlemi
-  const handleManualLogin = async () => {
-    if (!email || !password) {
-      setError('Lütfen tüm alanları doldurun');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    
-    try {
-      console.log('Manuel giriş yapılıyor:', { email });
-      
-      // Gen 2 formatında signIn
-      const { isSignedIn, nextStep } = await signIn({
-        username: email,
-        password
-      });
-      
-      console.log('Manuel giriş başarılı:', isSignedIn);
-      Alert.alert('Giriş Başarılı', 'Ana sayfaya yönlendiriliyorsunuz.');
-      navigation.replace('Main');
-    } catch (error: any) {
-      console.log('Manuel giriş hatası:', error);
-      console.log('Hata türü:', typeof error);
-      console.log('Hata kodu:', error?.code);
-      console.log('Hata mesajı:', error?.message);
-      
-      let errorMessage = 'Giriş yapılırken bir hata oluştu';
-      if (error?.name === 'UserNotConfirmedException') {
-        errorMessage = 'Hesabınızı doğrulamanız gerekiyor';
-        navigation.navigate('ConfirmAccount', { email });
-        return;
-      } else if (error?.name === 'NotAuthorizedException') {
-        errorMessage = 'Geçersiz e-posta veya şifre';
-      } else if (error?.name === 'UserNotFoundException') {
-        errorMessage = 'Bu e-posta adresi ile kayıtlı hesap bulunamadı';
-      } else if (error?.message) {
-        errorMessage = error.message;
-      }
-      
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
 
   if (initializing) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <LinearGradient
-          colors={['#000000', '#121212']}
-          style={styles.container}
-        >
-          <View style={styles.content}>
+      <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#4a90e2" />
-            <Text style={styles.loadingText}>Kontrol ediliyor...</Text>
+        <Text style={styles.loadingText}>Uygulama yükleniyor...</Text>
           </View>
-        </LinearGradient>
-      </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
       <LinearGradient
-        colors={['#000000', '#121212', '#1e1e1e']}
-        start={{x: 0, y: 0}}
-        end={{x: 1, y: 1}}
-        style={styles.container}
+        colors={['#000', '#1a1a1a', '#2d2d2d']}
+        style={styles.gradient}
       >
+        <ScrollView contentContainerStyle={styles.scrollContainer}>
+          {/* Logo */}
         <View style={styles.logoContainer}>
-          <Image source={LogoImage} style={styles.logoImage} resizeMode="contain" />
+            <Image source={LogoImage} style={styles.logo} resizeMode="contain" />
+            <Text style={styles.appName}>BioRest</Text>
+            <Text style={styles.tagline}>Sağlığınızı Takip Edin</Text>
         </View>
         
-        <Text style={styles.subtitle}>Uyku Kalitenizi Artırın</Text>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Giriş Yap</Text>
+          {/* Login Form */}
+          <View style={styles.formContainer}>
+            <Text style={styles.title}>Giriş Yap</Text>
           
-          <View style={styles.form}>
+            {error && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>E-posta</Text>
               <TextInput
                 style={styles.input}
-                placeholder="E-postanızı girin"
-                placeholderTextColor="#8a8a8a"
+                placeholder="E-posta"
+                placeholderTextColor="#666"
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                autoCorrect={false}
               />
             </View>
 
             <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Şifre</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Şifrenizi girin"
-                placeholderTextColor="#8a8a8a"
+                placeholder="Şifre"
+                placeholderTextColor="#666"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
               />
             </View>
 
-            {error && <Text style={styles.errorText}>{error}</Text>}
-
             <TouchableOpacity 
-              style={styles.forgotPassword} 
-              onPress={handleResetPassword}
-            >
-              <Text style={styles.forgotPasswordText}>Şifremi Unuttum</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.loginButton}
+              style={[styles.loginButton, loading && styles.disabledButton]}
               onPress={handleLogin}
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.loginButtonText}>Giriş Yap</Text>
               )}
             </TouchableOpacity>
             
-            <TouchableOpacity
-              style={styles.googleLoginButton}
-              onPress={() => Alert.alert('Google Giriş', 'Google ile giriş özelliği yakında eklenecek.')}
-            >
-              <View style={styles.googleButtonContent}>
-                <Text style={styles.googleLogo}>G</Text>
-                <Text style={styles.googleLoginText}>Google ile Giriş Yap</Text>
-              </View>
+            {/* Helper Buttons */}
+            <View style={styles.helperContainer}>
+              <TouchableOpacity onPress={handleResetPassword}>
+                <Text style={styles.linkText}>Şifremi Unuttum</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity
-              style={styles.registerButton}
-              onPress={() => navigation.navigate('Register')}
-            >
-              <Text style={styles.registerButtonText}>Hesabınız yok mu? <Text style={styles.registerButtonTextBold}>Kayıt Ol</Text></Text>
+              <TouchableOpacity onPress={confirmUserInPool}>
+                <Text style={styles.linkText}>Hesabımı Doğrula</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Register Link */}
+            <View style={styles.registerContainer}>
+              <Text style={styles.registerText}>Hesabınız yok mu? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                <Text style={styles.registerLink}>Kayıt Ol</Text>
             </TouchableOpacity>
           </View>
         </View>
-
-        <View style={styles.footer}>
-
-        </View>
+        </ScrollView>
       </LinearGradient>
-      </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#000000',
-    
-  },
   container: {
     flex: 1,
-    
-    justifyContent: 'center',
-    
+    backgroundColor: '#000',
   },
-  content: {
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  loadingText: {
+    color: '#fff',
+    marginTop: 16,
+    fontSize: 16,
+  },
+  gradient: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 5,
-    justifyContent: 'center',
+    marginBottom: 50,
   },
-  logoImage: {
-    width: 250,
-    height: 200,
+  logo: {
+    width: 120,
+    height: 120,
+    marginBottom: 20,
+  },
+  appName: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  tagline: {
+    fontSize: 16,
+    color: '#ccc',
+    textAlign: 'center',
+  },
+  formContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+    padding: 30,
+    marginHorizontal: 10,
   },
   title: {
-    fontSize: 36,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    marginTop: 0,
-    marginLeft: 5,
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: '#ffffff',
+    textAlign: 'center',
     marginBottom: 30,
+  },
+  errorContainer: {
+    backgroundColor: 'rgba(255, 0, 0, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#ff4444',
+  },
+  errorText: {
+    color: '#ff4444',
+    fontSize: 14,
     textAlign: 'center',
-    opacity: 0.9,
-    fontWeight: '500',
-  },
-  card: {
-    backgroundColor: 'rgba(50, 50, 50, 0.25)',
-    borderRadius: 20,
-    padding: 25,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(100, 100, 100, 0.3)',
-    
-  },
-  cardTitle: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#fff',
-    textAlign: 'center',
-    marginBottom: 25,
-  },
-  form: {
-    width: '100%',
   },
   inputContainer: {
     marginBottom: 20,
   },
-  inputLabel: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-    opacity: 0.9,
-  },
   input: {
-    backgroundColor: 'rgba(70, 70, 70, 0.3)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderRadius: 12,
-    height: 55,
-    paddingHorizontal: 15,
+    padding: 15,
     fontSize: 16,
     color: '#fff',
     borderWidth: 1,
-    borderColor: 'rgba(100, 100, 100, 0.5)',
-  },
-  errorText: {
-    color: '#ff6b6b',
-    marginBottom: 10,
-    textAlign: 'center',
-    fontSize: 15,
-    fontWeight: '500',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   loginButton: {
     backgroundColor: '#4a90e2',
     borderRadius: 12,
-    height: 55,
-    justifyContent: 'center',
+    padding: 15,
     alignItems: 'center',
-    marginTop: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   loginButtonText: {
     color: '#fff',
-    fontWeight: 'bold',
     fontSize: 18,
-  },
-  registerButton: {
-    marginTop: 20,
-    alignItems: 'center',
-    padding: 10,
-  },
-  registerButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    opacity: 0.9,
-  },
-  registerButtonTextBold: {
     fontWeight: 'bold',
-    color: '#4a90e2',
-    opacity: 1,
   },
-  forgotPassword: {
-    alignItems: 'flex-end',
-    marginTop: 5,
-    marginBottom: 15,
+  helperContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 30,
   },
-  forgotPasswordText: {
+  linkText: {
     color: '#4a90e2',
-    fontSize: 15,
-    opacity: 0.9,
+    fontSize: 14,
     textDecorationLine: 'underline',
   },
-  footer: {
-    alignItems: 'center',
-    marginTop: 30,
-  },
-  testButton: {
-    backgroundColor: 'rgba(39, 174, 96, 0.3)',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(39, 174, 96, 0.5)',
-  },
-  testButtonText: {
-    color: '#27ae60',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  loadingText: {
-    color: '#fff',
-    marginTop: 15,
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  googleLoginButton: {
-    backgroundColor: 'rgba(70, 70, 70, 0.5)',
-    borderRadius: 12,
-    height: 55,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(100, 100, 100, 0.5)',
-  },
-  googleButtonContent: {
+  registerContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  googleLogo: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginRight: 10,
-    backgroundColor: '#4285F4',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    textAlign: 'center',
-    lineHeight: 30,
-    overflow: 'hidden',
-  },
-  googleLoginText: {
-    color: '#fff',
+  registerText: {
+    color: '#ccc',
     fontSize: 16,
-    fontWeight: '600',
+  },
+  registerLink: {
+    color: '#4a90e2',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textDecorationLine: 'underline',
   },
 });
 

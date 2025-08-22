@@ -1630,7 +1630,7 @@ PODS:
     - React-utils (= 0.78.0)
   - RNAppleHealthKit (1.7.0):
     - React
-  - RNCAsyncStorage (2.1.2):
+  - RNCAsyncStorage (2.2.0):
     - DoubleConversion
     - glog
     - hermes-engine
@@ -2252,7 +2252,7 @@ SPEC CHECKSUMS:
   ReactCodegen: 008c319179d681a6a00966edfc67fda68f9fbb2e
   ReactCommon: 0c097b53f03d6bf166edbcd0915da32f3015dd90
   RNAppleHealthKit: 86ef7ab70f762b802f5c5289372de360cca701f9
-  RNCAsyncStorage: 62fdbd7e63312228d4868779026248c2677911e1
+  RNCAsyncStorage: 79cfba789fca205b204f3ce7948b874500129eb4
   RNDateTimePicker: e30677c15dfba25452b1434181970162115cc4fe
   RNGestureHandler: dcb1b1db024f3744b03af56d132f4f72c4c27195
   RNReanimated: 04813c30d3c04044c32c60379945b71e0c6c950f

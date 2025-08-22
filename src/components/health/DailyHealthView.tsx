@@ -1,15 +1,17 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, ScrollView, RefreshControl, ActivityIndicator,TouchableOpacity } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { format, subDays, addDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack'; 
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import HealthMetricCard from '../common/HealthMetricCard';
 import HealthViewStyles from '../common/HealthViewStyles';
 import { HealthData } from '../../types/health';
-import { fetchHealthDataForDate } from '../../services/HealthDataService';
 import { RootStackParamList } from '../../navigation/types';
+import { useAppSelector, useAppDispatch } from '../../store/hooks';
+import { fetchDailyHealthData } from '../../store/slices/healthSlice';
+import HealthConnectService from '../../services/HealthConnectService';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -20,220 +22,264 @@ interface DailyHealthViewProps {
 
 const DailyHealthView: React.FC<DailyHealthViewProps> = ({ onDataLoaded, isActive }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [healthData, setHealthData] = useState<HealthData | null>(null);
-  const [error, setError] = useState<string | null>(null);
   
-  const isFocused = useIsFocused();
-  const dataFetchingRef = useRef<boolean>(false);
-  const dateChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Redux state ve dispatch
+  const dispatch = useAppDispatch();
+  const { dailyData, dailyLoading, dailyError } = useAppSelector((state) => state.health);
+  
   const navigation = useNavigation<NavigationProp>();
 
-  const fetchData = useCallback(async (date: Date, isRefresh = false) => {
-    // Veri yükleme işlemi zaten devam ediyorsa, yeni bir işlem başlatmayalım
-    if (dataFetchingRef.current && !isRefresh) return;
-    
-    try {
-      if (!isRefresh) {
-        setLoading(true);
-      }
-      dataFetchingRef.current = true;
-      setError(null);
-      
-      const data = await fetchHealthDataForDate(date);
-      setHealthData(data);
-      
-      if (onDataLoaded && data) {
-        onDataLoaded(data);
-      }
-    } catch (err) {
-      console.error('Günlük sağlık verisi yüklenirken hata:', err);
-      setError('Sağlık verileri yüklenirken bir hata oluştu. Lütfen tekrar deneyin.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      dataFetchingRef.current = false;
-    }
-  }, [onDataLoaded]);
-
-  // Tarihi değiştirme işlemi için debounce uygulayalım
-  const handleDateChange = useCallback((newDate: Date) => {
-    setSelectedDate(newDate);
-    
-    // Önceki timeout'u temizle
-    if (dateChangeTimeoutRef.current) {
-      clearTimeout(dateChangeTimeoutRef.current);
-    }
-    
-    // 300ms sonra veri yükleme işlemini başlat
-    dateChangeTimeoutRef.current = setTimeout(() => {
-      fetchData(newDate);
-    }, 300);
-  }, [fetchData]);
-
-  const goToPreviousDay = useCallback(() => {
-    handleDateChange(subDays(selectedDate, 1));
-  }, [selectedDate, handleDateChange]);
-
-  const goToNextDay = useCallback(() => {
-    handleDateChange(addDays(selectedDate, 1));
-  }, [selectedDate, handleDateChange]);
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchData(selectedDate, true);
-  }, [selectedDate, fetchData]);
-
-  // Uyku detay sayfasına yönlendirme işlemi
-  const navigateToSleepDetail = useCallback(() => {
-    if (healthData && healthData.sleep) {
-              navigation.navigate('SleepDetailsScreen', { sleepData: healthData.sleep });
-    }
-  }, [navigation, healthData]);
-
-  // Sekme aktif olduğunda veya tarih değiştiğinde veri yükle
+  // Redux'tan veri geldiğinde callback'i çağır
   useEffect(() => {
-    if (isActive && isFocused) {
-      fetchData(selectedDate);
+    if (dailyData && onDataLoaded) {
+      onDataLoaded(dailyData);
     }
-    
-    return () => {
-      // Komponent unmount edildiğinde timeout'u temizle
-      if (dateChangeTimeoutRef.current) {
-        clearTimeout(dateChangeTimeoutRef.current);
-      }
-    };
-  }, [selectedDate, fetchData, isActive, isFocused]);
+  }, [dailyData, onDataLoaded]);
 
-  if (loading && !refreshing) {
+  // Veri yenileme
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await dispatch(fetchDailyHealthData(selectedDate)).unwrap();
+    } catch (error) {
+      console.error('Veri yenileme hatası:', error);
+    }
+    setRefreshing(false);
+  }, [dispatch, selectedDate]);
+
+  // Tarih değiştirme
+  const handleDateChange = useCallback(async (newDate: Date) => {
+    setSelectedDate(newDate);
+    try {
+      await dispatch(fetchDailyHealthData(newDate)).unwrap();
+    } catch (error) {
+      console.error('Tarih değiştirme hatası:', error);
+    }
+  }, [dispatch]);
+
+  // Önceki gün
+  const goToPrevDay = () => {
+    const prevDay = subDays(selectedDate, 1);
+    handleDateChange(prevDay);
+  };
+
+  // Sonraki gün
+  const goToNextDay = () => {
+    const nextDay = addDays(selectedDate, 1);
+    handleDateChange(nextDay);
+  };
+
+  // Bugün
+  const goToToday = () => {
+    const today = new Date();
+    handleDateChange(today);
+  };
+
+  const isToday = format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+
+  if (dailyLoading && !dailyData) {
     return (
       <View style={HealthViewStyles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2980b9" />
-        <Text style={{ color: '#fff', marginTop: 16 }}>Veriler yükleniyor...</Text>
+        <ActivityIndicator size="large" color="#4a90e2" />
+        <Text style={{ color: '#fff', marginTop: 16 }}>Günlük veriler yükleniyor...</Text>
+      </View>
+    );
+  }
+
+  if (dailyError) {
+    return (
+      <View style={HealthViewStyles.loadingContainer}>
+        <Text style={HealthViewStyles.errorText}>
+          Veri yüklenirken hata oluştu: {dailyError}
+        </Text>
+        <TouchableOpacity 
+          style={{ marginTop: 10, padding: 10, backgroundColor: '#4a90e2', borderRadius: 5 }}
+          onPress={() => handleDateChange(selectedDate)}
+        >
+          <Text style={{ color: '#fff', textAlign: 'center' }}>Tekrar Dene</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={HealthViewStyles.container}>
+    <ScrollView 
+      style={HealthViewStyles.container}
+      refreshControl={
+        <RefreshControl 
+          refreshing={refreshing} 
+          onRefresh={handleRefresh}
+          colors={['#4a90e2']}
+          tintColor="#4a90e2"
+        />
+      }
+    >
+      {/* Tarih Navigasyonu */}
       <View style={HealthViewStyles.dateControlContainer}>
-        <TouchableOpacity onPress={goToPreviousDay} style={HealthViewStyles.dateButton}>
+        <TouchableOpacity onPress={goToPrevDay} style={HealthViewStyles.dateButton}>
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </TouchableOpacity>
         
         <Text style={HealthViewStyles.dateText}>
-          {format(selectedDate, 'd MMMM yyyy', { locale: tr })}
+          {format(selectedDate, 'dd MMMM yyyy', { locale: tr })}
         </Text>
         
-        <TouchableOpacity 
-          onPress={goToNextDay} 
-          style={HealthViewStyles.dateButton}
-          disabled={format(new Date(), 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd')}
-        >
-          <Ionicons 
-            name="chevron-forward" 
-            size={24} 
-            color={format(new Date(), 'yyyy-MM-dd') === format(selectedDate, 'yyyy-MM-dd') ? '#555' : '#fff'} 
-          />
+        <TouchableOpacity onPress={goToNextDay} style={HealthViewStyles.dateButton}>
+          <Ionicons name="chevron-forward" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
 
-      {error && <Text style={HealthViewStyles.errorText}>{error}</Text>}
-
-      <ScrollView
-        style={HealthViewStyles.scrollView}
-        contentContainerStyle={HealthViewStyles.contentContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#2980b9']}
-            tintColor="#fff"
-            titleColor="#fff"
-            title="Yenileniyor..."
-          />
-        }
-      >
-        <View style={HealthViewStyles.grid}>
-          {/* Kalp Atış Hızı */}
-          <View style={HealthViewStyles.gridItem}>
+      {/* Sağlık Metrikleri */}
+      <View style={HealthViewStyles.grid}>
+        {/* Kalp Atış Hızı */}
+        <View style={HealthViewStyles.gridItem}>
+          <TouchableOpacity 
+            onPress={() => navigation.navigate('HeartRateDetail', { 
+              date: format(selectedDate, 'yyyy-MM-dd') 
+            })}
+            activeOpacity={0.8}
+          >
             <HealthMetricCard
-              title="Nabız"
-              value={healthData?.heartRate.average || 0}
-              unit="bpm"
+              title="Manuel Nabız"
+              value={dailyData?.heartRate?.average ? Math.round(dailyData.heartRate.average) : 0}
+              unit="BPM"
               icon="heart"
               color="#e74c3c"
-              values={healthData?.heartRate.values || []}
-              times={healthData?.heartRate.times || []}
-              lastUpdated={healthData?.heartRate.lastUpdated}
+              values={dailyData?.heartRate?.values}
+              times={dailyData?.heartRate?.times}
+              lastUpdated={dailyData?.heartRate?.lastUpdated}
             />
-          </View>
+          </TouchableOpacity>
+        </View>
 
-          {/* Oksijen Seviyesi */}
-          <View style={HealthViewStyles.gridItem}>
+        {/* Oksijen Satürasyonu */}
+        <View style={HealthViewStyles.gridItem}>
+          <TouchableOpacity 
+            onPress={() => navigation.navigate('OxygenLevelDetail', { 
+              date: format(selectedDate, 'yyyy-MM-dd') 
+            })}
+            activeOpacity={0.8}
+          >
             <HealthMetricCard
               title="Oksijen"
-              value={healthData?.oxygen.average || 0}
+              value={dailyData?.oxygen?.average ? Math.round(dailyData.oxygen.average) : 0}
               unit="%"
               icon="water"
               color="#3498db"
-              values={healthData?.oxygen.values || []}
-              times={healthData?.oxygen.times || []}
-              lastUpdated={healthData?.oxygen.lastUpdated}
+              values={dailyData?.oxygen?.values}
+              times={dailyData?.oxygen?.times}
+              lastUpdated={dailyData?.oxygen?.lastUpdated}
             />
-          </View>
-          {/* Uyku */}
-          <View style={HealthViewStyles.gridItemLarge}>
-            <TouchableOpacity onPress={navigateToSleepDetail} activeOpacity={0.8}>
-              <HealthMetricCard
-                title="Uyku"
-                value={healthData?.sleep.totalMinutes || 0}
-                unit="dk"
-                icon="moon"
-                color="#34495e"
-                extraData={healthData?.sleep}
-                formatValue={(value) => {
-                  const hours = Math.floor(value / 60);
-                  const minutes = value % 60;
-                  return `${hours}s ${minutes}dk`;
-                }}
-                lastUpdated={healthData?.sleep.lastUpdated}
-              />
-            </TouchableOpacity>
-          </View>
-
-          {/* Adımlar */}
-          <View style={HealthViewStyles.gridItem}>
-            <HealthMetricCard
-              title="Adımlar"
-              value={typeof healthData?.steps.total === 'number' ? healthData.steps.total : 0}
-              unit="adım"
-              icon="footsteps"
-              color="#27ae60"
-              goal={10000}
-              precision={0}
-              lastUpdated={healthData?.steps.lastUpdated}
-            />
-          </View>
-
-          {/* Kalori */}
-          <View style={HealthViewStyles.gridItem}>
-            <HealthMetricCard
-              title="Kalori"
-              value={typeof healthData?.calories.total === 'number' ? healthData.calories.total : 0}
-              unit="kcal"
-              icon="flame"
-              color="#f39c12"
-              precision={0}
-              lastUpdated={healthData?.calories.lastUpdated}
-            />
-          </View>
-
-
+          </TouchableOpacity>
         </View>
-      </ScrollView>
-    </View>
+{/* Uyku */}
+        <View style={HealthViewStyles.gridItemLarge}>
+          <TouchableOpacity 
+            onPress={async () => {
+              if (dailyData?.sleep) {
+                console.log('🛌 DailyHealthView: Uyku detaylarına gidiliyor...');
+                
+                // Eğer uyku nabız verisi eksikse, AWS'ten almaya çalış
+                let sleepDataWithHeartRate = { ...dailyData.sleep };
+                
+                if (!sleepDataWithHeartRate.sleepHeartRate && sleepDataWithHeartRate.startTime && sleepDataWithHeartRate.endTime) {
+                  try {
+                    console.log('🛌❤️ Uyku nabız verisi eksik, Health Connect\'ten alınıyor...');
+                    
+                    
+                    const sleepHeartRateData = await HealthConnectService.getSleepHeartRateData(
+                      selectedDate.toISOString(),
+                      selectedDate.toISOString(),
+                      sleepDataWithHeartRate.startTime,
+                      sleepDataWithHeartRate.endTime
+                    );
+                    
+                    if (sleepHeartRateData.values && sleepHeartRateData.values.length > 0) {
+                      console.log('🛌❤️ Uyku nabız verisi bulundu:', {
+                        ölçümSayısı: sleepHeartRateData.values.length,
+                        ortalama: Math.round(sleepHeartRateData.average)
+                      });
+                      
+                      sleepDataWithHeartRate.sleepHeartRate = {
+                        average: sleepHeartRateData.average,
+                        min: sleepHeartRateData.min,
+                        max: sleepHeartRateData.max,
+                        values: sleepHeartRateData.values,
+                        times: sleepHeartRateData.times
+                      };
+                    } else {
+                      console.log('🛌❤️ Uyku nabız verisi bulunamadı');
+                    }
+                  } catch (error) {
+                    console.error('🛌❤️ Uyku nabız verisi alma hatası:', error);
+                  }
+                }
+                
+                navigation.navigate('SleepDetailsScreen', { 
+                  sleepData: sleepDataWithHeartRate 
+                });
+              }
+            }}
+            activeOpacity={0.8}
+          >
+            <HealthMetricCard
+              title="Uyku"
+              value={dailyData?.sleep?.totalMinutes || 0}
+              unit="dk"
+              icon="moon"
+              color="#34495e"
+              extraData={dailyData?.sleep}
+              formatValue={(value) => {
+                const hours = Math.floor(value / 60);
+                const minutes = value % 60;
+                return `${hours}s ${minutes}dk`;
+              }}
+              lastUpdated={dailyData?.sleep?.lastUpdated}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+    <View style={{flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between'}}>
+        {/* Adımlar */}
+        <View style={HealthViewStyles.gridItem}>
+          <HealthMetricCard
+            title="Adımlar"
+            value={dailyData?.steps?.total || 0}
+            unit="adım"
+            icon="footsteps"
+            color="#27ae60"
+            goal={10000}
+            precision={0}
+            lastUpdated={dailyData?.steps?.lastUpdated}
+          />
+        </View>
+
+        {/* Kalori */}
+        <View style={HealthViewStyles.gridItem}>
+          <HealthMetricCard
+            title="Kalori"
+            value={dailyData?.calories?.total || 0}
+            unit="kcal"
+            icon="flame"
+            color="#f39c12"
+            precision={0}
+            lastUpdated={dailyData?.calories?.lastUpdated}
+          />
+        </View>
+        </View>      
+        
+
+      {/* Veri Durumu */}
+      {dailyData && (
+        <View style={{ padding: 16, alignItems: 'center' }}>
+          <Text style={{ color: '#666', fontSize: 12 }}>
+            Son güncelleme: {format(new Date(dailyData.heartRate?.lastUpdated || Date.now()), 'HH:mm')}
+          </Text>
+        </View>
+      )}
+    </ScrollView>
   );
 };
 

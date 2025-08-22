@@ -46,7 +46,7 @@ const HealthMetricCard = ({
   
   // Nabız ve Oksijen için en son değeri kullan
   const getLatestValue = () => {
-    if (title === "Nabız" || title === "Oksijen") {
+    if (title === "Nabız" || title === "Manuel Nabız" || title === "Oksijen") {
       // Eğer values array'i varsa ve boş değilse en son değeri al
       if (values && values.length > 0) {
         const latestValue = values[values.length - 1];
@@ -71,7 +71,7 @@ const HealthMetricCard = ({
   
   // En son ölçüm zamanını al
   const getLatestTime = () => {
-    if ((title === "Nabız" || title === "Oksijen") && times && times.length > 0) {
+    if ((title === "Nabız" || title === "Manuel Nabız" || title === "Oksijen") && times && times.length > 0) {
       const latestTime = times[times.length - 1];
       console.log(`⏰ ${title} - En son ölçüm zamanı:`, latestTime);
       return latestTime;
@@ -81,7 +81,7 @@ const HealthMetricCard = ({
 
   // Nabız ve oksijen için gerçek min/max değerleri hesapla
   const getMinMaxValues = () => {
-    if ((title === "Nabız" || title === "Oksijen") && values && values.length > 0) {
+    if ((title === "Nabız" || title === "Manuel Nabız" || title === "Oksijen") && values && values.length > 0) {
       const min = Math.min(...values);
       const max = Math.max(...values);
       console.log(`📈 ${title} - Hesaplanan Min/Max:`, { min, max, toplam: values.length });
@@ -138,10 +138,14 @@ const HealthMetricCard = ({
   
   const handleCardPress = () => {
     // Karta tıklandığında ilgili detay sayfasına yönlendir
-    if (title === "Nabız") {
-      navigation.navigate('HeartRateDetail', { date: lastUpdated });
+    if (title === "Nabız" || title === "Manuel Nabız") {
+      navigation.navigate('HeartRateDetail', { 
+        date: lastUpdated || new Date().toISOString() 
+      });
     } else if (title === "Oksijen") {
-      navigation.navigate('OxygenLevelDetail', { date: lastUpdated });
+      navigation.navigate('OxygenLevelDetail', { 
+        date: lastUpdated || new Date().toISOString() 
+      });
     }
   };
   
@@ -209,7 +213,7 @@ const HealthMetricCard = ({
   };
 
   // Kalp atış hızı ve oksijen seviyesi için detay sayfası gösterimi
-  const isDetailNavigable = title === "Nabız" || title === "Oksijen";
+  const isDetailNavigable = title === "Nabız" || title === "Manuel Nabız" || title === "Oksijen";
   
   const renderCardContent = () => (
     <>
@@ -243,7 +247,7 @@ const HealthMetricCard = ({
                 <Text style={styles.minMaxValue}>{Math.round(actualMax)}</Text>
               </View>
               
-              {(title === "Nabız" || title === "Oksijen") && values && values.length > 0 && (
+              {(title === "Nabız" || title === "Manuel Nabız" || title === "Oksijen") && values && values.length > 0 && (
                 <View style={styles.minMaxItem}>
                   <Text style={styles.minMaxLabel}>Ölçüm</Text>
                   <Text style={styles.minMaxValue}>{values.length}</Text>

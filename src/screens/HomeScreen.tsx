@@ -1,134 +1,90 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView, Dimensions, Modal, TextInput, Alert, SafeAreaView, StatusBar, Platform, Animated, Easing } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, SafeAreaView, StatusBar, Platform, Animated, Easing } from 'react-native';
 import { LinearGradient } from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { LineChart } from 'react-native-chart-kit';
 import { useNavigation, CommonActions, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { RootStackParamList, MainTabParamList, SleepNotification } from '../navigation/types';
+import { RootStackParamList, MainTabParamList } from '../navigation/types';
 import { AnimatedCircularProgress } from 'react-native-circular-progress';
 import { SafeAreaView as SafeAreaViewContext } from 'react-native-safe-area-context';
 import HealthConnectService from '../services/HealthConnectService';
 import HealthDataQueryService from '../services/HealthDataQueryService';
 import { styles } from '../styles/HomeScreenStyles';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { setShowZzzInfoModal, setCalculatingScore } from '../store/slices/uiSlice';
+import { fetchDailyHealthData } from '../store/slices/healthSlice';
+
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
 const HomeScreen = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
-  const [showRatingModal, setShowRatingModal] = useState(false);
-  const [sleepRating, setSleepRating] = useState(0);
-  const [comment, setComment] = useState('');
-  const [selectedTab, setSelectedTab] = useState<'rating' | 'details'>('details');
-  const [showZzzInfoModal, setShowZzzInfoModal] = useState(false);
-  const [healthData, setHealthData] = useState<any>(null);
-  const [calculatingScore, setCalculatingScore] = useState(false);
-  const [latestSleepData, setLatestSleepData] = useState<any>(null);
+  const dispatch = useAppDispatch();
+  
+  // Redux state
+  const { showZzzInfoModal, calculatingScore } = useAppSelector((state) => state.ui);
+  const { dailyData: healthData } = useAppSelector((state) => state.health);
+  
+  // Local state
   const [realZScore, setRealZScore] = useState<number>(85);
-  const [latestHeartRate, setLatestHeartRate] = useState<number>(0);
-  const [latestOxygen, setLatestOxygen] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
   
   // Animasyon değerleri
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
   
-  // En son uyku verisini al
+  // Health Connect'ten bugünün verilerini al ve Z-skoru hesapla
   useEffect(() => {
-      const fetchLatestSleepData = async () => {
-    try {
-      console.log('📊 En son uyku verisi getiriliyor...');
-      const latestData = await HealthDataQueryService.getLatestHealthData();
-      
-      if (latestData) {
-        // Uyku verisi
-        if (latestData.uyku && latestData.uyku.length > 0) {
-          const sleepData = latestData.uyku[0]; // En son uyku verisi
-          
-          // 🛌❤️ Uyku nabız verisini de al (bugünün verisi için)
-          try {
-            console.log('🛌❤️ Uyku nabız verisi alınmaya çalışılıyor...');
+    const fetchTodayHealthData = async () => {
+      try {
+        setLoading(true);
+        console.log('📊 Bugünün Health Connect verileri getiriliyor...');
+        
+        // Redux'tan bugünün verilerini çek
             const today = new Date();
-            const startOfDayTime = new Date(today);
-            startOfDayTime.setHours(0, 0, 0, 0);
-            const endOfDayTime = new Date(today);
-            endOfDayTime.setHours(23, 59, 59, 999);
-            
-            // Uyku sırasındaki nabız verilerini al
-            if (Platform.OS === 'android') {
-              const sleepHeartRateData = await HealthConnectService.getSleepHeartRateData(
-                startOfDayTime.toISOString(),
-                endOfDayTime.toISOString(),
-                sleepData.startTime,  // Uyku başlangıç zamanı
-                sleepData.endTime     // Uyku bitiş zamanı
-              );
-              
-              if (sleepHeartRateData.values && sleepHeartRateData.values.length > 0) {
-                console.log('🛌❤️ Uyku nabız verisi bulundu:', {
-                  ortalama: sleepHeartRateData.sleepHeartRateAverage,
-                  min: Math.min(...sleepHeartRateData.values),
-                  max: Math.max(...sleepHeartRateData.values),
-                  ölçümSayısı: sleepHeartRateData.values.length
-                });
-                
-                // Uyku verisine nabız bilgisini ekle
-                sleepData.sleepHeartRate = {
-                  average: sleepHeartRateData.sleepHeartRateAverage,
-                  min: Math.min(...sleepHeartRateData.values),
-                  max: Math.max(...sleepHeartRateData.values),
-                  values: sleepHeartRateData.values,
-                  times: sleepHeartRateData.times
-                };
-              } else {
-                console.log('🛌❤️ Uyku nabız verisi bulunamadı');
-              }
-            }
-          } catch (sleepHeartRateError) {
-            console.error('🛌❤️ Uyku nabız verisi alınamadı:', sleepHeartRateError);
-          }
-          
-          setLatestSleepData(sleepData);
-          
-          // Z skoru hesapla
-          const calculatedZScore = calculateZScore(sleepData);
-          setRealZScore(calculatedZScore);
-          
-          console.log('✅ En son uyku verisi alındı:', {
-            toplam: sleepData.toplam,
-            derin: sleepData.derin,
-            rem: sleepData.rem,
-            hafif: sleepData.hafif,
-            zScore: calculatedZScore,
-            sleepHeartRate: sleepData.sleepHeartRate ? 'Var' : 'Yok'
-          });
-        }
-          
-          // Nabız verisi
-          if (latestData.nabiz && latestData.nabiz.length > 0) {
-            // En son nabız ölçümünü al
-            const latestHeartRateData = latestData.nabiz[latestData.nabiz.length - 1];
-            setLatestHeartRate(latestHeartRateData.deger || 0);
-            console.log('✅ En son nabız verisi alındı:', latestHeartRateData.deger);
-          }
-          
-          // Oksijen verisi
-          if (latestData.oksijen && latestData.oksijen.length > 0) {
-            // En son oksijen ölçümünü al
-            const latestOxygenData = latestData.oksijen[latestData.oksijen.length - 1];
-            setLatestOxygen(latestOxygenData.deger || 0);
-            console.log('✅ En son oksijen verisi alındı:', latestOxygenData.deger);
-          }
-        } else {
-          console.log('❌ Hiç sağlık verisi bulunamadı');
-        }
+        await dispatch(fetchDailyHealthData(today));
+        
+        console.log('✅ Health Connect verileri Redux\'a yüklendi');
       } catch (error) {
-        console.error('❌ En son uyku verisi alınamadı:', error);
+        console.error('❌ Health Connect verileri alınamadı:', error);
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchLatestSleepData();
-  }, []);
+    fetchTodayHealthData();
+  }, [dispatch]);
+
+  // Redux'taki sağlık verilerini izle ve Z-skoru hesapla
+  useEffect(() => {
+    if (healthData && healthData.sleep) {
+      console.log('🛌 Redux\'taki uyku verisi ile Z-skor hesaplanıyor...');
+      
+      // Redux verilerini Z-skor hesaplama formatına dönüştür
+      const sleepDataForCalculation = {
+        toplam: healthData.sleep.duration || 0,
+        derin: healthData.sleep.deep || 0,
+        rem: healthData.sleep.rem || 0,
+        hafif: healthData.sleep.light || 0
+      };
+      
+      // Z skoru hesapla
+      const calculatedZScore = calculateZScore(sleepDataForCalculation);
+      setRealZScore(calculatedZScore);
+      
+      console.log('✅ Z-skor güncellendi:', {
+        toplam: sleepDataForCalculation.toplam,
+        derin: sleepDataForCalculation.derin,
+        rem: sleepDataForCalculation.rem,
+        hafif: sleepDataForCalculation.hafif,
+        zScore: calculatedZScore
+      });
+    }
+  }, [healthData]);
+
+  
 
   // Z skoru hesaplama fonksiyonu (GERÇEKÇİ ALGORİTMA)
   const calculateZScore = (sleepData: any): number => {
@@ -234,35 +190,9 @@ const HomeScreen = () => {
     }, [])
   );
   
-  // Örnek bildirim verisi (daha sonra veritabanından gelecek)
-  const [lastNightData] = useState<SleepNotification>({
-    date: '21.03.2024',
-    lightLevel: 'Düşük',
-    fragrance: 'Lavanta',
-    sound: 'Yağmur Sesi',
-    duration: '7.5 saat',
-    heartRateData: {
-      time: ['23:00', '00:00', '01:00'],
-      rates: [68, 65, 62],
-      events: [
-        { time: '23:30', action: 'Koku Değişimi', effect: 'Olumlu' }
-      ]
-    }
-  });
 
-  const { width: screenWidth } = Dimensions.get('window');
 
-  const chartConfig = {
-    backgroundGradientFrom: '#1a1a1a',
-    backgroundGradientTo: '#1a1a1a',
-    color: (opacity = 1) => `rgba(74, 144, 226, ${opacity})`,
-    strokeWidth: Platform.select({ ios: 2, android: 1.5 }),
-    barPercentage: 0.5,
-    useShadowColorFromDataset: false,
-    propsForLabels: {
-      fontSize: Platform.select({ ios: 12, android: 10 }),
-    },
-  };
+
 
   const navigateToTab = (routeName: keyof MainTabParamList) => {
     navigation.dispatch(
@@ -273,31 +203,6 @@ const HomeScreen = () => {
         },
       })
     );
-  };
-
-  const handleSleepRating = () => {
-    // Burada veritabanına kayıt işlemi yapılacak
-    Alert.alert('Başarılı', 'Değerlendirmeniz kaydedildi!');
-    setShowRatingModal(false);
-    setSleepRating(0);
-    setComment('');
-  };
-
-  const renderStars = () => {
-    const stars = [];
-    for (let i = 1; i <= 5; i++) {
-      stars.push(
-        <TouchableOpacity key={i} onPress={() => setSleepRating(i)}>
-          <Ionicons
-            name={i <= sleepRating ? 'star' : 'star-outline'}
-            size={40}
-            color="#FFD700"
-            style={{ marginHorizontal: 5 }}
-          />
-        </TouchableOpacity>
-      );
-    }
-    return stars;
   };
 
   // Gerçek Z-score değeri kullan
@@ -373,94 +278,43 @@ const HomeScreen = () => {
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Uyku Bildirimi Kartı */}
-        <Animated.View
-          style={{
-            opacity: fadeAnim,
-            transform: [{translateY: Animated.multiply(slideAnim, 1.5)}]
-          }}
-        >
-          <TouchableOpacity 
-            style={styles.notificationCard}
-            onPress={() => {
-              if (latestSleepData) {
-                // Convert AWS data to SleepMetric format
-                const sleepMetric = {
-                  status: 'good' as const,
-                  values: [latestSleepData.toplam || 0],
-                  times: [new Date().toISOString()],
-                  lastUpdated: new Date().toISOString(),
-                  duration: latestSleepData.toplam || 0,
-                  efficiency: latestSleepData.toplam > 0 ? (() => {
-                    const hours = latestSleepData.toplam / 60;
-                    const deepPercent = (latestSleepData.derin / latestSleepData.toplam) * 100;
-                    const remPercent = (latestSleepData.rem / latestSleepData.toplam) * 100;
-                    
-                    let efficiency = 50; // Base efficiency
-                    
-                    // Duration factor (max 30 points)
-                    if (hours >= 7 && hours <= 8.5) efficiency += 30;
-                    else if (hours >= 6.5) efficiency += 20;
-                    else if (hours >= 6) efficiency += 15;
-                    else if (hours >= 5) efficiency += 10;
-                    else efficiency += 5;
-                    
-                    // Sleep quality factor (max 20 points)  
-                    if (deepPercent >= 15 && remPercent >= 15) efficiency += 20;
-                    else if (deepPercent >= 12 || remPercent >= 12) efficiency += 10;
-                    else efficiency += 5;
-                    
-                                         return Math.min(95, Math.max(30, efficiency));
-                   })() : 0,
-                    deep: latestSleepData.derin || 0,
-                  light: latestSleepData.hafif || 0,
-                  rem: latestSleepData.rem || 0,
-                  awake: 0,
-                  startTime: latestSleepData.startTime || latestSleepData.start || new Date().toISOString(),
-                  endTime: latestSleepData.endTime || latestSleepData.end || new Date().toISOString(),
-                  totalMinutes: latestSleepData.toplam || 0,
-                  stages: [],
-                  // Uyku nabız verisini ekle
-                  sleepHeartRate: latestSleepData.sleepHeartRate
-                };
-                navigation.navigate('SleepDetailsScreen', { sleepData: sleepMetric });
-              }
-            }}
-          >
-            <LinearGradient
-              colors={['#1e3c72', '#2a5298']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.notificationGradient}
-            >
-              <View>
-                <View style={styles.notificationHeader}>
-                  <Ionicons name="moon" size={28} color="#fff" />
-                  <Text style={styles.notificationTitle} numberOfLines={1} ellipsizeMode="tail">Dün Geceki Uykunuz</Text>
-                </View>
-                <View style={styles.notificationContent}>
-                  <Text style={styles.notificationText} numberOfLines={1} ellipsizeMode="tail">Tarih: {lastNightData.date}</Text>
-                  <Text style={styles.notificationText} numberOfLines={1} ellipsizeMode="tail">Işık: {lastNightData.lightLevel}</Text>
-                  <Text style={styles.notificationText} numberOfLines={1} ellipsizeMode="tail">Koku: {lastNightData.fragrance}</Text>
-                  <Text style={styles.notificationText} numberOfLines={1} ellipsizeMode="tail">Ses: {lastNightData.sound}</Text>
-                  <Text style={styles.notificationText} numberOfLines={1} ellipsizeMode="tail">Süre: {lastNightData.duration}</Text>
-                </View>
-              </View>
-              <Text style={styles.notificationFooter} numberOfLines={1} ellipsizeMode="tail">
-                Detayları görüntülemek için dokunun
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </Animated.View>
 
-        {/* Z-Score Göstergesi */}
+
+        {/* Z-Score Göstergesi - TIKLANABİLİR */}
         <Animated.View
           style={{
             opacity: fadeAnim,
             transform: [{translateY: Animated.multiply(slideAnim, 1.8)}]
           }}
         >
-          <View style={styles.zScoreContainer}>
+          <TouchableOpacity 
+            style={styles.zScoreContainer}
+            onPress={() => {
+              if (healthData?.sleep) {
+                // Health Connect verilerini SleepMetric formatına dönüştür
+                const sleepMetric = {
+                  status: 'good' as const,
+                  values: [healthData.sleep.duration || 0],
+                  times: [new Date().toISOString()],
+                  lastUpdated: healthData.sleep.lastUpdated || new Date().toISOString(),
+                  duration: healthData.sleep.duration || 0,
+                  efficiency: healthData.sleep.efficiency || realZScore,
+                  deep: healthData.sleep.deep || 0,
+                  light: healthData.sleep.light || 0,
+                  rem: healthData.sleep.rem || 0,
+                  awake: healthData.sleep.awake || 0,
+                  startTime: healthData.sleep.startTime || new Date().toISOString(),
+                  endTime: healthData.sleep.endTime || new Date().toISOString(),
+                  totalMinutes: healthData.sleep.duration || 0,
+                  stages: healthData.sleep.stages || [],
+                  // Uyku nabız verisini ekle
+                  sleepHeartRate: healthData.sleep.sleepHeartRate
+                };
+                navigation.navigate('SleepDetailsScreen', { sleepData: sleepMetric });
+              }
+            }}
+            activeOpacity={0.9}
+          >
             <LinearGradient
               colors={['#283593', '#1a237e']}
               start={{ x: 0, y: 0 }}
@@ -478,7 +332,7 @@ const HomeScreen = () => {
                 <Text style={styles.zScoreTitle} numberOfLines={1} ellipsizeMode="tail">Skoru</Text>
                 </View>
                 </View>
-                <TouchableOpacity onPress={() => setShowZzzInfoModal(true)}>
+                <TouchableOpacity onPress={() => dispatch(setShowZzzInfoModal(true))}>
                   <Ionicons name="information-circle-outline" size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
@@ -505,9 +359,9 @@ const HomeScreen = () => {
                   <Text style={styles.zScoreMessage} numberOfLines={1} ellipsizeMode="tail">
                     {getZScoreMessage(zScore)}
                   </Text>
-                  <Text style={styles.zScoreDescription} numberOfLines={2} ellipsizeMode="tail">
-                    {latestSleepData 
-                      ? `Son uykunuz: ${Math.round(latestSleepData.toplam / 60 * 10) / 10} saat. ${getZScoreMessage(zScore)} kalitede!`
+                  <Text style={styles.zScoreDescription} numberOfLines={3} ellipsizeMode="tail">
+                    {healthData?.sleep?.duration 
+                      ? `Son uykunuz: ${Math.floor(healthData.sleep.duration / 60)}s ${healthData.sleep.duration % 60}dk. ${getZScoreMessage(zScore)} kalitede! Detaylı analiz için dokunun.`
                       : 'Uyku veriniz henüz yüklenemedi. Biraz bekleyip tekrar deneyin.'
                     }
                   </Text>
@@ -518,8 +372,8 @@ const HomeScreen = () => {
                 <View style={styles.zScoreStat}>
                   <Text style={styles.zScoreStatLabel} numberOfLines={1} ellipsizeMode="tail">REM</Text>
                   <Text style={styles.zScoreStatValue}>
-                    {latestSleepData && latestSleepData.toplam > 0 
-                      ? `${Math.round((latestSleepData.rem / latestSleepData.toplam) * 100)}%`
+                    {healthData?.sleep?.duration && healthData.sleep.duration > 0 
+                      ? `${Math.round((healthData.sleep.rem / healthData.sleep.duration) * 100)}%`
                       : '-%'
                     }
                   </Text>
@@ -527,8 +381,8 @@ const HomeScreen = () => {
                 <View style={styles.zScoreStat}>
                   <Text style={styles.zScoreStatLabel} numberOfLines={1} ellipsizeMode="tail">Derin Uyku</Text>
                   <Text style={styles.zScoreStatValue}>
-                    {latestSleepData && latestSleepData.toplam > 0 
-                      ? `${Math.round((latestSleepData.derin / latestSleepData.toplam) * 100)}%`
+                    {healthData?.sleep?.duration && healthData.sleep.duration > 0 
+                      ? `${Math.round((healthData.sleep.deep / healthData.sleep.duration) * 100)}%`
                       : '-%'
                     }
                   </Text>
@@ -536,8 +390,8 @@ const HomeScreen = () => {
                 <View style={styles.zScoreStat}>
                   <Text style={styles.zScoreStatLabel} numberOfLines={1} ellipsizeMode="tail">Hafif Uyku</Text>
                   <Text style={styles.zScoreStatValue}>
-                    {latestSleepData && latestSleepData.toplam > 0 
-                      ? `${Math.round((latestSleepData.hafif / latestSleepData.toplam) * 100)}%`
+                    {healthData?.sleep?.duration && healthData.sleep.duration > 0 
+                      ? `${Math.round((healthData.sleep.light / healthData.sleep.duration) * 100)}%`
                       : '-%'
                     }
                   </Text>
@@ -545,20 +399,20 @@ const HomeScreen = () => {
               </View>
 
                             {/* Uyku Nabız İstatistikleri ve Grafik - YENİ BÖLÜM */}
-              {latestSleepData?.sleepHeartRate && (
+              {healthData?.sleep?.sleepHeartRate && (
                 <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)', paddingTop: 12 }}>
                   {/* Nabız İstatistikleri */}
                   <View style={styles.zScoreStats}>
                     <View style={styles.zScoreStat}>
                       <Text style={styles.zScoreStatLabel} numberOfLines={1} ellipsizeMode="tail">Uyku Nabız</Text>
                       <Text style={[styles.zScoreStatValue, { color: '#ff6b6b' }]}>
-                        {Math.round(latestSleepData.sleepHeartRate.average)} BPM
+                        {Math.round(healthData.sleep.sleepHeartRate.average)} BPM
                       </Text>
                     </View>
                     <View style={styles.zScoreStat}>
                       <Text style={styles.zScoreStatLabel} numberOfLines={1} ellipsizeMode="tail">Min/Max</Text>
                       <Text style={[styles.zScoreStatValue, { fontSize: 12 }]}>
-                        {latestSleepData.sleepHeartRate.min}-{latestSleepData.sleepHeartRate.max}
+                        {healthData.sleep.sleepHeartRate.min}-{healthData.sleep.sleepHeartRate.max}
                       </Text>
                     </View>
                   </View>
@@ -566,8 +420,19 @@ const HomeScreen = () => {
 
                 </View>
               )}
+              
+              {/* Tıklama İpucu */}
+              <View style={{ paddingHorizontal: 16, paddingBottom: 12, alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 }}>
+                  <Ionicons name="analytics-outline" size={16} color="rgba(255,255,255,0.7)" />
+                  <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginLeft: 6 }}>
+                    Detaylı uyku analizi için dokunun
+                  </Text>
+                  <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.7)" style={{ marginLeft: 4 }} />
+                </View>
+              </View>
             </LinearGradient>
-          </View>
+          </TouchableOpacity>
         </Animated.View>
 
         {/* Günlük Özet */}
@@ -577,26 +442,25 @@ const HomeScreen = () => {
             <View style={styles.summaryCard}>
               <Ionicons name="moon" size={24} color="#4a90e2" />
               <Text style={styles.summaryValue}>
-                {latestSleepData && latestSleepData.toplam > 0 
-                  ? (latestSleepData.toplam / 60).toFixed(1)
+                {healthData?.sleep?.duration && healthData.sleep.duration > 0 
+                  ? `${Math.floor(healthData.sleep.duration / 60)}s ${healthData.sleep.duration % 60}dk`
                   : '--'
                 }
               </Text>
               <Text style={styles.summaryLabel} numberOfLines={1} ellipsizeMode="tail">Uyku Süresi</Text>
-              <Text style={styles.summaryUnit} numberOfLines={1} ellipsizeMode="tail">saat</Text>
             </View>
             <View style={styles.summaryCard}>
               <Ionicons name="heart" size={24} color="#e74c3c" />
               <Text style={styles.summaryValue}>
-                {latestHeartRate > 0 ? latestHeartRate : '--'}
+                {healthData?.heartRate?.average ? Math.round(healthData.heartRate.average) : '--'}
               </Text>
-              <Text style={styles.summaryLabel} numberOfLines={1} ellipsizeMode="tail">Son Nabız</Text>
+              <Text style={styles.summaryLabel} numberOfLines={1} ellipsizeMode="tail">Manuel Nabız</Text>
               <Text style={styles.summaryUnit} numberOfLines={1} ellipsizeMode="tail">BPM</Text>
             </View>
             <View style={styles.summaryCard}>
               <Ionicons name="water" size={24} color="#2e86de" />
               <Text style={styles.summaryValue}>
-                {latestOxygen > 0 ? `${latestOxygen}%` : '--%'}
+                {healthData?.oxygen?.average ? `${Math.round(healthData.oxygen.average)}%` : '--%'}
               </Text>
               <Text style={styles.summaryLabel} numberOfLines={1} ellipsizeMode="tail">Kan Oksijeni</Text>
               <Text style={styles.summaryUnit} numberOfLines={1} ellipsizeMode="tail">SpO2</Text>
@@ -607,143 +471,20 @@ const HomeScreen = () => {
       
       </ScrollView>
 
-      {/* Değerlendirme Modalı */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={showRatingModal}
-        onRequestClose={() => setShowRatingModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Uyku Analizi</Text>
-              <TouchableOpacity onPress={() => setShowRatingModal(false)}>
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
 
-            <View style={styles.tabContainer}>
-              <TouchableOpacity 
-                style={[styles.tab, selectedTab === 'details' && styles.activeTab]}
-                onPress={() => setSelectedTab('details')}
-              >
-                <Text style={[styles.tabText, selectedTab === 'details' && styles.activeTabText]}>
-                  Detaylar
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.tab, selectedTab === 'rating' && styles.activeTab]}
-                onPress={() => setSelectedTab('rating')}
-              >
-                <Text style={[styles.tabText, selectedTab === 'rating' && styles.activeTabText]}>
-                  Değerlendirme
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalScroll}>
-              {selectedTab === 'details' ? (
-                <View style={styles.detailsContainer}>
-                  <Text style={styles.chartTitle}>Gece Boyunca Nabız Değişimi</Text>
-                  <LineChart
-                    data={{
-                      labels: lastNightData.heartRateData.time,
-                      datasets: [{
-                        data: lastNightData.heartRateData.rates
-                      }]
-                    }}
-                    width={screenWidth - 80}
-                    height={Platform.OS === 'ios' ? 220 : 200}
-                    chartConfig={chartConfig}
-                    bezier
-                    style={styles.chart}
-                    withInnerLines={Platform.OS === 'ios'}
-                    withOuterLines={true}
-                    withVerticalLabels={true}
-                    withHorizontalLabels={true}
-                    fromZero={true}
-                  />
-
-                  <View style={styles.eventsContainer}>
-                    <Text style={styles.eventsTitle}>Önemli Olaylar</Text>
-                    {lastNightData.heartRateData.events.map((event, index) => (
-                      <View key={index} style={styles.eventItem}>
-                        <View style={styles.eventHeader}>
-                          <Ionicons name="time-outline" size={20} color="#4a90e2" />
-                          <Text style={styles.eventTime}>{event.time}</Text>
-                        </View>
-                        <Text style={styles.eventAction}>{event.action}</Text>
-                        <Text style={styles.eventEffect}>{event.effect}</Text>
-                      </View>
-                    ))}
-                  </View>
-
-                  <View style={styles.summaryContainer}>
-                    <Text style={styles.summaryTitle}>Özet Bilgiler</Text>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Ortalama Nabız:</Text>
-                      <Text style={styles.summaryValue}>
-                        {Math.round(
-                          lastNightData.heartRateData.rates.reduce((a, b) => a + b) / 
-                          lastNightData.heartRateData.rates.length
-                        )} BPM
-                      </Text>
-                    </View>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>En Yüksek Nabız:</Text>
-                      <Text style={styles.summaryValue}>
-                        {Math.max(...lastNightData.heartRateData.rates)} BPM
-                      </Text>
-                    </View>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>En Düşük Nabız:</Text>
-                      <Text style={styles.summaryValue}>
-                        {Math.min(...lastNightData.heartRateData.rates)} BPM
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.ratingContainer}>
-                  <Text style={styles.ratingTitle}>Uykunuzu Değerlendirin</Text>
-                  <View style={styles.starsContainer}>
-                    {renderStars()}
-                  </View>
-                  <TextInput
-                    style={styles.commentInput}
-                    placeholder="Yorumunuzu yazın (isteğe bağlı)"
-                    placeholderTextColor="#666"
-                    multiline
-                    value={comment}
-                    onChangeText={setComment}
-                  />
-                  <TouchableOpacity
-                    style={[styles.submitButton, !sleepRating && styles.disabledButton]}
-                    onPress={handleSleepRating}
-                    disabled={!sleepRating}
-                  >
-                    <Text style={styles.buttonText}>Değerlendirmeyi Gönder</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
 
       {/* ZzZ Skor Bilgi Modalı */}
       <Modal
         animationType="fade"
         transparent={true}
         visible={showZzzInfoModal}
-        onRequestClose={() => setShowZzzInfoModal(false)}
+        onRequestClose={() => dispatch(setShowZzzInfoModal(false))}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>ZzZ-Skoru Nedir?</Text>
-              <TouchableOpacity onPress={() => setShowZzzInfoModal(false)}>
+              <TouchableOpacity onPress={() => dispatch(setShowZzzInfoModal(false))}>
                 <Ionicons name="close" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -814,7 +555,7 @@ const HomeScreen = () => {
 
               <TouchableOpacity
                 style={styles.closeButton}
-                onPress={() => setShowZzzInfoModal(false)}
+                onPress={() => dispatch(setShowZzzInfoModal(false))}
               >
                 <Text style={styles.closeButtonText}>Anladım</Text>
               </TouchableOpacity>

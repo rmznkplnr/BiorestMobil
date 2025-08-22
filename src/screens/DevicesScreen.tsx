@@ -109,7 +109,7 @@ const DevicesScreen = () => {
             }}
           >
             <View style={styles.devicesGrid}>
-              {/* Mi Band 9 Kartı */}
+              {/* Mi Band 3 Kartı */}
               <Animated.View
                 style={{
                   opacity: fadeAnim,
@@ -122,7 +122,7 @@ const DevicesScreen = () => {
               >
                 <TouchableOpacity
                   style={[styles.deviceCard, styles.miBandCard]}
-                  onPress={() => navigation.navigate('MiBand9')}
+                  onPress={() => navigation.navigate('MiBand3')}
                 >
                   <LinearGradient
                     colors={['#9C27B0', '#673AB7']}
@@ -134,18 +134,14 @@ const DevicesScreen = () => {
                         size={24} 
                         color="#fff" 
                       />
-                      <View style={styles.miBandBadge}>
-                        <Text style={styles.miBandBadgeText}>YENI</Text>
-                      </View>
+                     
                     </View>
                     <View style={styles.deviceInfo}>
-                      <Text style={styles.deviceName}>Mi Band 9</Text>
+                      <Text style={styles.deviceName}>Mi Band 3</Text>
                       <Text style={styles.deviceType}>
-                        Gerçek Zamanlı Uyku Nabız İzleme
+                        Akıllı Bileklik ile Sağlık Takibi
                       </Text>
-                      <Text style={styles.miBandFeature}>
-                        🌙 Uyku sırasında 30s aralıkla nabız ölçümü
-                      </Text>
+                      
                     </View>
                   </LinearGradient>
                 </TouchableOpacity>

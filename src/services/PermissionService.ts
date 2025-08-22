@@ -1,206 +1,271 @@
 import { PermissionsAndroid, Platform, Alert, Linking } from 'react-native';
-import { isMiui, getBrand } from './DeviceInfoUtils';
+import { check, request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 
-class PermissionService {
-  /**
-   * Tüm gerekli izinleri ister
-   */
-  async requestAllPermissions(): Promise<boolean> {
+export class PermissionService {
+  // Bluetooth izinleri için
+  static async requestBluetoothPermissions(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+
     try {
-      // Xiaomi/MIUI cihazlar için özel kontrol
-      const brand = await getBrand();
-      if (brand.toLowerCase() === 'xiaomi' || await isMiui()) {
-        await this.checkMiuiPermissions();
-      }
-      
-      // Android 10 (API 29) ve sonrası için aktivite tanıma izinleri
-      if (Platform.OS === 'android' && Platform.Version >= 29) {
-        const activityRecognitionGranted = await this.requestActivityRecognitionPermission();
-        if (!activityRecognitionGranted) {
-          console.log('Aktivite tanıma izni reddedildi');
+      // Android 12+ (API 31+) için yeni izinler
+      if (Platform.Version >= 31) {
+        console.log('🔍 Android 12+ Bluetooth izinleri isteniyor...');
+        
+        const permissions = [
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
+        ];
+
+        const results = await PermissionsAndroid.requestMultiple(permissions);
+        
+        // Tüm izinlerin durumunu kontrol et
+        const allGranted = Object.values(results).every(
+          (result: string) => result === PermissionsAndroid.RESULTS.GRANTED
+        );
+
+        if (allGranted) {
+          console.log('✅ Tüm Bluetooth izinleri verildi');
+          return true;
+        } else {
+          console.log('❌ Bazı Bluetooth izinleri reddedildi:', results);
+          this.showBluetoothPermissionAlert();
+          return false;
+        }
+      } else {
+        // Android 11 ve altı için eski izinler
+        console.log('🔍 Android 11- Bluetooth izinleri isteniyor...');
+        
+        const locationPermission = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+
+        if (locationPermission === PermissionsAndroid.RESULTS.GRANTED) {
+          console.log('✅ Location izni verildi (Bluetooth için)');
+          return true;
+        } else {
+          console.log('❌ Location izni reddedildi');
+          this.showBluetoothPermissionAlert();
           return false;
         }
       }
-
-      // Konum izinleri
-      const locationGranted = await this.requestLocationPermissions();
-      if (!locationGranted) {
-        console.log('Konum izinleri reddedildi');
-        return false;
-      }
-
-      // Bluetooth izinleri
-      const bluetoothGranted = await this.requestBluetoothPermissions();
-      if (!bluetoothGranted) {
-        console.log('Bluetooth izinleri reddedildi');
-        return false;
-      }
-
-      return true;
     } catch (error) {
-      console.error('İzin isteme hatası:', error);
+      console.error('❌ Bluetooth izin hatası:', error);
       return false;
     }
   }
-  
-  /**
-   * Xiaomi/MIUI telefonlarda özel izin ayarları için kontrol
-   */
-  async checkMiuiPermissions(): Promise<void> {
+
+  // Konum izni için (Bluetooth scanning için gerekli)
+  static async requestLocationPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+
     try {
-      Alert.alert(
-        'Xiaomi Cihaz Tespit Edildi',
-        'Xiaomi cihazınızda Google Fit bağlantısının düzgün çalışması için, "Pil ve performans" ayarlarından uygulamanın arka plan aktivitesine izin verdiğinizden emin olun.',
-        [
-          { text: 'Daha Sonra', style: 'cancel' },
-          { 
-            text: 'Ayarlara Git', 
-            onPress: () => {
-              // Xiaomi pil ayarlarına yönlendir
+      const locationPermission = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        {
+          title: 'Konum İzni Gerekli',
+          message: 'Mi Band 3 cihazını bulabilmek için konum iznine ihtiyacımız var. Bluetooth cihazları konum izni olmadan taranamaz.',
+          buttonNeutral: 'Daha Sonra Sor',
+          buttonNegative: 'İptal',
+          buttonPositive: 'İzin Ver',
+        }
+      );
+
+      if (locationPermission === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('✅ Konum izni verildi');
+        return true;
+      } else {
+        console.log('❌ Konum izni reddedildi');
+        this.showLocationPermissionAlert();
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Konum izin hatası:', error);
+      return false;
+    }
+  }
+
+  // Health Connect izinleri için
+  static async requestHealthConnectPermissions(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+
+    try {
+      // Health Connect izinleri Android manifest'te tanımlı
+      // Runtime'da sadece Health Connect API üzerinden isteniyor
+      console.log('✅ Health Connect izinleri manifest\'te tanımlı');
+      return true;
+    } catch (error) {
+      console.error('❌ Health Connect izin hatası:', error);
+      return false;
+    }
+  }
+
+  // Bildirim izni için (Android 13+)
+  static async requestNotificationPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android' || Platform.Version < 33) return true;
+
+    try {
+      // Android 13+ için bildirim izni manifest'te tanımlı
+      // Runtime'da otomatik olarak isteniyor
+      console.log('✅ Bildirim izni manifest\'te tanımlı');
+      return true;
+    } catch (error) {
+      console.error('❌ Bildirim izin hatası:', error);
+      return false;
+    }
+  }
+
+  // Tüm gerekli izinleri iste
+  static async requestAllPermissions(): Promise<boolean> {
+    try {
+      console.log('🔐 Tüm izinler isteniyor...');
+      
+      const [
+        bluetoothGranted,
+        locationGranted,
+        healthConnectGranted,
+        notificationGranted
+      ] = await Promise.all([
+        this.requestBluetoothPermissions(),
+        this.requestLocationPermission(),
+        this.requestHealthConnectPermissions(),
+        this.requestNotificationPermission(),
+      ]);
+
+      const allGranted = bluetoothGranted && locationGranted && healthConnectGranted;
+      
+      if (allGranted) {
+        console.log('✅ Tüm gerekli izinler verildi');
+        return true;
+      } else {
+        console.log('❌ Bazı izinler reddedildi');
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ İzin isteme hatası:', error);
+      return false;
+    }
+  }
+
+  // Bluetooth izin uyarısı
+  private static showBluetoothPermissionAlert() {
+    Alert.alert(
+      'Bluetooth İzni Gerekli',
+      'Mi Band 3 cihazını bulabilmek için Bluetooth izinlerine ihtiyacımız var. Lütfen ayarlardan izin verin.',
+      [
+        { text: 'İptal', style: 'cancel' },
+        { text: 'Ayarlara Git', onPress: () => Linking.openSettings() },
+      ]
+    );
+  }
+
+  // Konum izin uyarısı
+  private static showLocationPermissionAlert() {
+    Alert.alert(
+      'Konum İzni Gerekli',
+      'Bluetooth cihazları konum izni olmadan taranamaz. Bu, Android\'in güvenlik özelliğidir.',
+      [
+        { text: 'İptal', style: 'cancel' },
+        { text: 'Ayarlara Git', onPress: () => Linking.openSettings() },
+      ]
+    );
+  }
+
+  // Health Connect izin uyarısı
+  private static showHealthConnectPermissionAlert() {
+    Alert.alert(
+      'Health Connect İzni Gerekli',
+      'Sağlık verilerini okuyabilmek için Health Connect izinlerine ihtiyacımız var.',
+      [
+        { text: 'İptal', style: 'cancel' },
+        { text: 'Ayarlara Git', onPress: () => Linking.openSettings() },
+      ]
+    );
+  }
+
+  // Konum servisleri aktif mi kontrol et (BLE çalışma sistemi)
+  static async checkLocationServicesEnabled(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+
+    try {
+      // Android'de konum izni varsa ve FINE_LOCATION verilmişse, 
+      // genellikle konum servisleri de açıktır
+      const locationPermission = await check(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
+      console.log('📍 Konum izni durumu:', locationPermission);
+      
+      if (locationPermission === RESULTS.GRANTED) {
+        console.log('✅ Konum izni mevcut - Bluetooth tarama için uygun');
+        return true;
+      } else {
+        console.log('❌ Konum izni yok - Bluetooth tarama engellenir');
+        return false;
+      }
+    } catch (error) {
+      console.log('⚠️ Konum servisi durumu kontrol edilemedi:', error);
+      return false; // Güvenli seçenek: false döndür
+    }
+  }
+
+  // Konum servisleri açma rehberi göster
+  static showLocationServicesAlert() {
+    Alert.alert(
+      'Konum Servisleri Gerekli',
+      'Bluetooth cihazları taramak için Android\'de konum servisleri açık olmalıdır.\n\n🔧 Çözüm Adımları:\n\n1️⃣ Ayarlar uygulamasını açın\n2️⃣ "Konum" sekmesine gidin\n3️⃣ Konum servislerini AÇIK yapın\n4️⃣ Uygulamaya geri dönün\n\n💡 Bu, Android\'in güvenlik özelliğidir. Konumunuz kullanılmaz.',
+      [
+        { text: 'İptal', style: 'cancel' },
+        { 
+          text: 'Konum Ayarları', 
+          onPress: () => {
+            try {
+              // Android konum ayarlarını aç
+              Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS');
+            } catch (error) {
+              // Fallback olarak genel ayarlara git
               Linking.openSettings();
             }
           }
-        ]
-      );
-    } catch (error) {
-      console.error('Xiaomi izin kontrolü hatası:', error);
-    }
+        },
+      ]
+    );
   }
 
-  /**
-   * Aktivite tanıma izni ister
-   */
-  async requestActivityRecognitionPermission(): Promise<boolean> {
+  // Bluetooth tarama için tüm gereksinimleri kontrol et
+  static async checkBluetoothScanRequirements(): Promise<{ success: boolean; message: string }> {
     try {
-      if (Platform.OS !== 'android' || Platform.Version < 29) {
-        return true; // Android 10'dan düşük sürümler için gerekli değil
+      console.log('🔍 Bluetooth tarama gereksinimleri kontrol ediliyor...');
+
+      // 1. İzinleri kontrol et
+      const permissionsGranted = await this.requestBluetoothPermissions();
+      if (!permissionsGranted) {
+        return {
+          success: false,
+          message: 'Bluetooth izinleri verilmedi. Lütfen ayarlardan izin verin.'
+        };
       }
 
-      const granted = await PermissionsAndroid.request(
-        'android.permission.ACTIVITY_RECOGNITION',
-        {
-          title: 'Aktivite Tanıma İzni',
-          message: 
-            'Uyku ve sağlık verilerinizi analiz etmek için ' +
-            'aktivite tanıma izni gereklidir.',
-          buttonNeutral: 'Daha Sonra Sor',
-          buttonNegative: 'İptal',
-          buttonPositive: 'Tamam',
-        }
-      );
+      // 2. Konum servislerini kontrol et
+      const locationEnabled = await this.checkLocationServicesEnabled();
+      if (!locationEnabled) {
+        this.showLocationServicesAlert();
+        return {
+          success: false,
+          message: 'Konum servisleri kapalı. Bluetooth tarama için gerekli.'
+        };
+      }
 
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
+      console.log('✅ Tüm Bluetooth tarama gereksinimleri karşılandı');
+      return {
+        success: true,
+        message: 'Bluetooth tarama için hazır'
+      };
+
     } catch (error) {
-      console.error('Aktivite tanıma izni hatası:', error);
-      return false;
+      console.error('❌ Bluetooth tarama gereksinim kontrolü hatası:', error);
+      return {
+        success: false,
+        message: 'Kontrol sırasında hata oluştu: ' + String(error)
+      };
     }
   }
-
-  /**
-   * Konum izinlerini ister
-   */
-  async requestLocationPermissions(): Promise<boolean> {
-    try {
-      if (Platform.OS !== 'android') {
-        return true; // Sadece Android için gerekli
-      }
-
-      const fineLocationGranted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        {
-          title: 'Hassas Konum İzni',
-          message: 'Hassas konum izni gereklidir.',
-          buttonNeutral: 'Daha Sonra Sor',
-          buttonNegative: 'İptal',
-          buttonPositive: 'Tamam',
-        }
-      );
-
-      const coarseLocationGranted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-        {
-          title: 'Yaklaşık Konum İzni',
-          message: 'Yaklaşık konum izni gereklidir.',
-          buttonNeutral: 'Daha Sonra Sor',
-          buttonNegative: 'İptal',
-          buttonPositive: 'Tamam',
-        }
-      );
-
-      // Android 10 ve üzeri için arka plan konum izni
-      let backgroundLocationGranted = true;
-      if (Platform.Version >= 29) {
-        backgroundLocationGranted = await PermissionsAndroid.request(
-          'android.permission.ACCESS_BACKGROUND_LOCATION',
-          {
-            title: 'Arka Plan Konum İzni',
-            message: 
-              'Uygulamanın arka planda çalışırken de ' +
-              'konumunuza erişmesine izin verir.',
-            buttonNeutral: 'Daha Sonra Sor',
-            buttonNegative: 'İptal',
-            buttonPositive: 'Tamam',
-          }
-        ) === PermissionsAndroid.RESULTS.GRANTED;
-      }
-
-      return (
-        fineLocationGranted === PermissionsAndroid.RESULTS.GRANTED &&
-        coarseLocationGranted === PermissionsAndroid.RESULTS.GRANTED &&
-        backgroundLocationGranted
-      );
-    } catch (error) {
-      console.error('Konum izinleri hatası:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Bluetooth izinlerini ister
-   */
-  async requestBluetoothPermissions(): Promise<boolean> {
-    try {
-      if (Platform.OS !== 'android') {
-        return true; // Sadece Android için gerekli
-      }
-
-      // Android 12 ve üzeri için Bluetooth tarama ve bağlantı izinleri
-      if (Platform.Version >= 31) {
-        const scanGranted = await PermissionsAndroid.request(
-          'android.permission.BLUETOOTH_SCAN',
-          {
-            title: 'Bluetooth Tarama İzni',
-            message: 'Bluetooth cihazlarını taramak için izin gereklidir.',
-            buttonNeutral: 'Daha Sonra Sor',
-            buttonNegative: 'İptal',
-            buttonPositive: 'Tamam',
-          }
-        );
-
-        const connectGranted = await PermissionsAndroid.request(
-          'android.permission.BLUETOOTH_CONNECT',
-          {
-            title: 'Bluetooth Bağlantı İzni',
-            message: 'Bluetooth cihazlarına bağlanmak için izin gereklidir.',
-            buttonNeutral: 'Daha Sonra Sor',
-            buttonNegative: 'İptal',
-            buttonPositive: 'Tamam',
-          }
-        );
-
-        return (
-          scanGranted === PermissionsAndroid.RESULTS.GRANTED &&
-          connectGranted === PermissionsAndroid.RESULTS.GRANTED
-        );
-      }
-
-      // Android 12'den düşük sürümler için eski Bluetooth izinleri
-      return true;
-    } catch (error) {
-      console.error('Bluetooth izinleri hatası:', error);
-      return false;
-    }
-  }
-}
-
-export default new PermissionService(); 
+} 

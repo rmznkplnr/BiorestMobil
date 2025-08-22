@@ -26,6 +26,10 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   timeRangeSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between', // veya 'center' ya da 'space-around'
+    alignItems: 'center',
+    marginVertical: 16,
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginBottom: 8,
